@@ -4,7 +4,7 @@ import { TrendPoint } from '@/domain/models/metrics/trend-point';
 import { MetricsCalculator } from '@/domain/services/metrics-calculator';
 import { env } from '@/infrastructure/config/env';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
-import { addDays, differenceInDays, format, isAfter, isBefore, subDays } from 'date-fns';
+import { addDays, differenceInDays, format, isAfter, isBefore, subDays, parseISO } from 'date-fns';
 
 /**
  * Options for the Copilot API client
@@ -107,10 +107,23 @@ export class CopilotApiClient {
       
       // If response.data is empty or doesn't have the expected structure,
       // create a default metrics object
-      let metricsData = response.data;
+      let rawResponseData = response.data;
+      let metricsData = rawResponseData; // Default assumption
+
+      // Check for common nested structures
+      if (rawResponseData && typeof rawResponseData === 'object') {
+          if (rawResponseData.data && typeof rawResponseData.data === 'object') {
+              console.log('Using nested data from "data" property');
+              metricsData = rawResponseData.data;
+          } else if (rawResponseData.metrics && typeof rawResponseData.metrics === 'object') {
+              console.log('Using nested data from "metrics" property');
+              metricsData = rawResponseData.metrics;
+          }
+      }
       
+      // Now proceed with the existing check using the potentially updated metricsData
       if (!metricsData || typeof metricsData !== 'object') {
-        console.warn('API returned unexpected data format. Using default metrics.');
+        console.warn('API returned unexpected data format or structure. Using default metrics.');
         metricsData = {
           totalCompletionsCount: 0,
           totalSuggestionCount: 0,
@@ -218,10 +231,23 @@ export class CopilotApiClient {
       
       // If response.data is empty or doesn't have the expected structure,
       // create a default metrics object
-      let metricsData = response.data;
+      let rawResponseData = response.data;
+      let metricsData = rawResponseData; // Default assumption
+
+      // Check for common nested structures
+      if (rawResponseData && typeof rawResponseData === 'object') {
+          if (rawResponseData.data && typeof rawResponseData.data === 'object') {
+              console.log(`Using nested data from "data" property for team ${teamSlug}`);
+              metricsData = rawResponseData.data;
+          } else if (rawResponseData.metrics && typeof rawResponseData.metrics === 'object') {
+              console.log(`Using nested data from "metrics" property for team ${teamSlug}`);
+              metricsData = rawResponseData.metrics;
+          }
+      }
       
+      // Now proceed with the existing check using the potentially updated metricsData
       if (!metricsData || typeof metricsData !== 'object') {
-        console.warn(`API returned unexpected data format for team ${teamSlug}. Using default metrics.`);
+        console.warn(`API returned unexpected data format or structure for team ${teamSlug}. Using default metrics.`);
         metricsData = {
           totalCompletionsCount: 0,
           totalSuggestionCount: 0,
