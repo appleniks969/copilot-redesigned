@@ -59,34 +59,30 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
     console.log('Filtering metrics by date range:', { startDate, endDate });
     
     // Check if we actually have data for the full 28-day range in metrics
-    // If not, we'll just use the limited data we have with a warning
     const hasFullData = metrics.dateRange && 
                         metrics.dateRange.startDate && 
                         metrics.dateRange.endDate;
     
     if (!hasFullData) {
       console.warn('Cannot properly filter metrics: missing date range information in source data');
-      return metrics;
+      return metrics; // Return the original data if we can't filter
     }
     
-    // Calculate what fraction of the full period our filter represents
+    // Parse dates for calculations
     const fullRangeStart = parseISO(metrics.dateRange.startDate);
     const fullRangeEnd = parseISO(metrics.dateRange.endDate);
     const filterStart = parseISO(startDate);
     const filterEnd = parseISO(endDate);
     
-    // Calculate the total days in each range
-    const fullRangeDays = Math.max(1, Math.round((fullRangeEnd.getTime() - fullRangeStart.getTime()) / (24 * 60 * 60 * 1000)));
-    
     // Calculate overlap of selected range with available data range
     const effectiveStartDate = new Date(Math.max(filterStart.getTime(), fullRangeStart.getTime()));
     const effectiveEndDate = new Date(Math.min(filterEnd.getTime(), fullRangeEnd.getTime()));
     
-    // If there's no overlap, return zero metrics
+    // If there's no overlap, return metrics object with zeros
     if (effectiveEndDate < effectiveStartDate) {
       console.warn('Selected date range has no overlap with available data');
       
-      // Return a metrics object with zeros
+      // Return a metrics object with zeros but maintain structure
       return {
         totalCompletionsCount: 0,
         totalSuggestionCount: 0,
@@ -106,23 +102,50 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
       };
     }
     
+    // Calculate days for ratio (used only if no daily breakdown available)
+    const fullRangeDays = Math.max(1, Math.round((fullRangeEnd.getTime() - fullRangeStart.getTime()) / (24 * 60 * 60 * 1000)));
     const filteredDays = Math.max(1, Math.round((effectiveEndDate.getTime() - effectiveStartDate.getTime()) / (24 * 60 * 60 * 1000)));
     const daysRatio = filteredDays / fullRangeDays;
     
     console.log(`Date range ratio: ${daysRatio} (${filteredDays}/${fullRangeDays} days)`);
     
-    // Scale the metrics linearly based on the days ratio
-    // This is an approximation but better than no filtering at all
+    // Check if we have daily breakdown data (this would be ideal but GitHub API might not provide it)
+    // If we had daily data, we'd filter like this:
+    /*
+    if (metrics.dailyBreakdown) {
+      // Real filtering using daily data
+      const filteredData = metrics.dailyBreakdown
+        .filter(day => {
+          const dayDate = parseISO(day.date);
+          return dayDate >= effectiveStartDate && dayDate <= effectiveEndDate;
+        })
+        .reduce((totals, day) => {
+          // Sum up all metrics from daily data
+          totals.totalCompletionsCount += day.completionsCount;
+          // etc.
+          return totals;
+        }, initialTotals);
+    }
+    */
+    
+    // Since we likely don't have daily data, use proportional scaling
+    // This is an approximation but better than returning null or empty data
     const filtered: CopilotMetrics = {
       totalCompletionsCount: Math.round(metrics.totalCompletionsCount * daysRatio),
       totalSuggestionCount: Math.round(metrics.totalSuggestionCount * daysRatio),
       totalAcceptanceCount: Math.round(metrics.totalAcceptanceCount * daysRatio),
-      // Percentages and averages don't need scaling
-      totalAcceptancePercentage: metrics.totalAcceptancePercentage,
+      // Protect against division by zero
+      totalAcceptancePercentage: metrics.totalSuggestionCount > 0 ? 
+        (Math.round(metrics.totalAcceptanceCount * daysRatio) / Math.round(metrics.totalSuggestionCount * daysRatio) * 100) : 
+        metrics.totalAcceptancePercentage,
       // For users, we'll assume consistent usage across the period
       totalActiveUsers: Math.round(metrics.totalActiveUsers * daysRatio),
-      avgCompletionsPerUser: metrics.avgCompletionsPerUser,
-      avgSuggestionsPerUser: metrics.avgSuggestionsPerUser,
+      avgCompletionsPerUser: metrics.totalActiveUsers > 0 ? 
+        (Math.round(metrics.totalCompletionsCount * daysRatio) / Math.round(metrics.totalActiveUsers * daysRatio)) : 
+        metrics.avgCompletionsPerUser,
+      avgSuggestionsPerUser: metrics.totalActiveUsers > 0 ? 
+        (Math.round(metrics.totalSuggestionCount * daysRatio) / Math.round(metrics.totalActiveUsers * daysRatio)) : 
+        metrics.avgSuggestionsPerUser,
       avgAcceptancePercentage: metrics.avgAcceptancePercentage,
       // Scale estimated time saved
       estimatedTimeSaved: metrics.estimatedTimeSaved ? metrics.estimatedTimeSaved * daysRatio : 0,
@@ -132,8 +155,10 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
         completionsCount: Math.round(repo.completionsCount * daysRatio),
         suggestionsCount: Math.round(repo.suggestionsCount * daysRatio),
         acceptanceCount: Math.round(repo.acceptanceCount * daysRatio),
-        // Percentage stays the same
-        acceptancePercentage: repo.acceptancePercentage
+        // Recalculate percentage to avoid inconsistencies
+        acceptancePercentage: repo.suggestionsCount > 0 ? 
+          (Math.round(repo.acceptanceCount * daysRatio) / Math.round(repo.suggestionsCount * daysRatio) * 100) : 
+          repo.acceptancePercentage
       })),
       // Filter file extensions
       fileExtensionMetrics: Object.entries(metrics.fileExtensionMetrics).reduce((acc, [ext, extMetrics]) => {
@@ -142,8 +167,10 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
           completionsCount: Math.round(extMetrics.completionsCount * daysRatio),
           suggestionsCount: Math.round(extMetrics.suggestionsCount * daysRatio),
           acceptanceCount: Math.round(extMetrics.acceptanceCount * daysRatio),
-          // Percentage stays the same
-          acceptancePercentage: extMetrics.acceptancePercentage
+          // Recalculate percentage to avoid inconsistencies
+          acceptancePercentage: extMetrics.suggestionsCount > 0 ? 
+            (Math.round(extMetrics.acceptanceCount * daysRatio) / Math.round(extMetrics.suggestionsCount * daysRatio) * 100) : 
+            extMetrics.acceptancePercentage
         };
         return acc;
       }, {} as Record<string, any>),
@@ -153,6 +180,13 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
         endDate: format(effectiveEndDate, 'yyyy-MM-dd')
       }
     };
+    
+    // Ensure no null/undefined values in the filtered data
+    Object.entries(filtered).forEach(([key, value]) => {
+      if (value === null || value === undefined) {
+        (filtered as any)[key] = typeof metrics[key as keyof CopilotMetrics] === 'number' ? 0 : {};
+      }
+    });
     
     console.log('Filtered metrics:', filtered);
     return filtered;
