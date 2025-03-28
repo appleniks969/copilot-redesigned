@@ -30,34 +30,110 @@ export class MetricsCalculator {
   }
 
   /**
+   * Helper method to safely get a numeric value from an API response
+   * Handles different property naming conventions (snake_case vs camelCase)
+   * @param obj The object to extract value from
+   * @param snakeCaseKey The snake_case key to check
+   * @param camelCaseKey The camelCase key to check
+   * @returns The numeric value or 0 if not found
+   */
+  private static getNumberValue(obj: any, snakeCaseKey: string, camelCaseKey: string): number {
+    // Check for undefined or null object
+    if (!obj) return 0;
+    
+    // Try snake_case first, then camelCase, then fallback to 0
+    const value = obj[snakeCaseKey] !== undefined ? obj[snakeCaseKey] : 
+                 (obj[camelCaseKey] !== undefined ? obj[camelCaseKey] : 0);
+                 
+    // Ensure we have a valid number
+    return typeof value === 'number' ? value : 0;
+  }
+
+  /**
    * Add derived metrics to Copilot metrics
-   * @param metrics Base metrics from API
+   * @param metricsData Base metrics from API
    * @param secondsPerSuggestion Average time saved per suggestion in seconds
    * @returns Enhanced metrics with derived values
    */
   static enhanceWithDerivedMetrics(
-    metrics: CopilotMetrics,
+    metricsData: any,
     secondsPerSuggestion: number = 55
   ): CopilotMetrics {
-    console.log('Input metrics to enhance:', metrics);
+    console.log('Input metrics to enhance:', metricsData);
     
-    const enhancedMetrics = { ...metrics };
+    // Start with empty metrics object that matches our domain model
+    const enhancedMetrics: CopilotMetrics = {
+      totalCompletionsCount: 0,
+      totalSuggestionCount: 0,
+      totalAcceptanceCount: 0,
+      totalAcceptancePercentage: 0,
+      totalActiveUsers: 0,
+      avgCompletionsPerUser: 0,
+      avgSuggestionsPerUser: 0,
+      avgAcceptancePercentage: 0,
+      repositoryMetrics: [],
+      fileExtensionMetrics: {},
+      dateRange: {
+        startDate: '',
+        endDate: ''
+      }
+    };
     
-    // Ensure required properties exist with defaults
-    enhancedMetrics.totalCompletionsCount = metrics.totalCompletionsCount || 0;
-    enhancedMetrics.totalSuggestionCount = metrics.totalSuggestionCount || 0;
-    enhancedMetrics.totalAcceptanceCount = metrics.totalAcceptanceCount || 0;
-    enhancedMetrics.totalAcceptancePercentage = metrics.totalAcceptancePercentage || 0;
-    enhancedMetrics.totalActiveUsers = metrics.totalActiveUsers || 0;
-    enhancedMetrics.avgCompletionsPerUser = metrics.avgCompletionsPerUser || 0;
-    enhancedMetrics.avgSuggestionsPerUser = metrics.avgSuggestionsPerUser || 0;
-    enhancedMetrics.avgAcceptancePercentage = metrics.avgAcceptancePercentage || 0;
-    enhancedMetrics.repositoryMetrics = metrics.repositoryMetrics || [];
-    enhancedMetrics.fileExtensionMetrics = metrics.fileExtensionMetrics || {};
+    // Map values from API response format to our domain model
+    // Handle both direct property access and potential nested structures
+    if (metricsData) {
+      // Direct property mapping with fallbacks to zero
+      enhancedMetrics.totalCompletionsCount = this.getNumberValue(metricsData, 'total_completions_count', 'totalCompletionsCount');
+      enhancedMetrics.totalSuggestionCount = this.getNumberValue(metricsData, 'total_suggestion_count', 'totalSuggestionCount');
+      enhancedMetrics.totalAcceptanceCount = this.getNumberValue(metricsData, 'total_acceptance_count', 'totalAcceptanceCount');
+      enhancedMetrics.totalAcceptancePercentage = this.getNumberValue(metricsData, 'total_acceptance_percentage', 'totalAcceptancePercentage');
+      enhancedMetrics.totalActiveUsers = this.getNumberValue(metricsData, 'total_active_users', 'totalActiveUsers');
+      enhancedMetrics.avgCompletionsPerUser = this.getNumberValue(metricsData, 'avg_completions_per_user', 'avgCompletionsPerUser');
+      enhancedMetrics.avgSuggestionsPerUser = this.getNumberValue(metricsData, 'avg_suggestions_per_user', 'avgSuggestionsPerUser');
+      enhancedMetrics.avgAcceptancePercentage = this.getNumberValue(metricsData, 'avg_acceptance_percentage', 'avgAcceptancePercentage');
+      
+      // Handle repositories array - could be named differently in API
+      if (Array.isArray(metricsData.repository_metrics)) {
+        enhancedMetrics.repositoryMetrics = metricsData.repository_metrics.map((repo: any) => ({
+          repositoryId: repo.repository_id || repo.repositoryId || '',
+          repositoryName: repo.repository_name || repo.repositoryName || '',
+          completionsCount: repo.completions_count || repo.completionsCount || 0,
+          suggestionsCount: repo.suggestions_count || repo.suggestionsCount || 0,
+          acceptanceCount: repo.acceptance_count || repo.acceptanceCount || 0,
+          acceptancePercentage: repo.acceptance_percentage || repo.acceptancePercentage || 0
+        }));
+      } else if (Array.isArray(metricsData.repositoryMetrics)) {
+        enhancedMetrics.repositoryMetrics = metricsData.repositoryMetrics;
+      }
+      
+      // Handle file extensions object - could be in different formats
+      const fileExtMetrics = metricsData.file_extension_metrics || metricsData.fileExtensionMetrics || {};
+      enhancedMetrics.fileExtensionMetrics = {};
+      
+      Object.keys(fileExtMetrics).forEach(ext => {
+        const extData = fileExtMetrics[ext];
+        enhancedMetrics.fileExtensionMetrics[ext] = {
+          completionsCount: extData.completions_count || extData.completionsCount || 0,
+          suggestionsCount: extData.suggestions_count || extData.suggestionsCount || 0,
+          acceptanceCount: extData.acceptance_count || extData.acceptanceCount || 0,
+          acceptancePercentage: extData.acceptance_percentage || extData.acceptancePercentage || 0
+        };
+      });
+      
+      // Handle date range if it exists
+      if (metricsData.dateRange) {
+        enhancedMetrics.dateRange = metricsData.dateRange;
+      } else if (metricsData.date_range) {
+        enhancedMetrics.dateRange = {
+          startDate: metricsData.date_range.start_date || '',
+          endDate: metricsData.date_range.end_date || ''
+        };
+      }
+    }
     
     // Calculate estimated time saved
     enhancedMetrics.estimatedTimeSaved = this.calculateTimeSaved(
-      metrics.totalAcceptanceCount,
+      enhancedMetrics.totalAcceptanceCount,
       secondsPerSuggestion
     );
     

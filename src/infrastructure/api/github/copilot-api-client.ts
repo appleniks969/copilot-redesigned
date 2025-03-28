@@ -130,6 +130,9 @@ export class CopilotApiClient {
       }
       
       // Enhance with derived metrics
+      // Make sure we're logging the raw data properly before enhancement
+      console.log('Raw metrics data before enhancement:', JSON.stringify(metricsData, null, 2));
+      
       const enhancedMetrics = MetricsCalculator.enhanceWithDerivedMetrics(
         metricsData,
         this.secondsPerSuggestion
@@ -226,6 +229,9 @@ export class CopilotApiClient {
       }
       
       // Enhance with derived metrics
+      // Make sure we're logging the raw data properly before enhancement
+      console.log(`Raw metrics data for team ${teamSlug} before enhancement:`, JSON.stringify(metricsData, null, 2));
+      
       const enhancedMetrics = MetricsCalculator.enhanceWithDerivedMetrics(
         metricsData,
         this.secondsPerSuggestion
