@@ -4,13 +4,14 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/ui/context/AuthContext';
 import { Token } from '@/domain/models/auth/token';
+import { env } from '@/infrastructure/config/env';
 
 export default function Home() {
   const router = useRouter();
   const { login } = useAuth();
   
-  const [orgName, setOrgName] = useState('');
-  const [teamSlugs, setTeamSlugs] = useState<string[]>([]);
+  const [orgName, setOrgName] = useState(env.defaultOrgName);
+  const [teamSlugs, setTeamSlugs] = useState<string[]>(env.defaultTeamSlugs);
   const [teamInput, setTeamInput] = useState('');
   const [token, setToken] = useState('');
   const [loading, setLoading] = useState(false);
