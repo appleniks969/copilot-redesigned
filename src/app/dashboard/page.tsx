@@ -10,7 +10,8 @@ import { useMetrics } from '@/ui/context/MetricsContext';
 import { useAuth } from '@/ui/context/AuthContext';
 import { CopilotApiClient } from '@/infrastructure/api/github/copilot-api-client';
 import { Trend } from '@/domain/models/metrics/trend';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
+import { env } from '@/infrastructure/config/env';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -18,7 +19,7 @@ export default function DashboardPage() {
   const { organizationMetrics, loading, error, fetchOrganizationMetrics } = useMetrics();
   
   const [dateRange, setDateRange] = useState({
-    startDate: format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'),
+    startDate: format(subDays(new Date(), env.maxHistoricalDays), 'yyyy-MM-dd'),
     endDate: format(new Date(), 'yyyy-MM-dd'),
   });
   
@@ -141,30 +142,38 @@ export default function DashboardPage() {
         <DateRangePicker onChange={handleDateRangeChange} />
       </div>
       
+      {/* API Limitation Notice */}
+      <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6 text-sm">
+        <p className="text-blue-800">
+          <span className="font-medium">Note:</span> GitHub Copilot Metrics API has a limitation of {env.maxHistoricalDays} days of historical data. 
+          Any date range beyond {env.maxHistoricalDays} days ago will be automatically adjusted.
+        </p>
+      </div>
+      
       {/* Metrics Cards */}
       {organizationMetrics && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <MetricCard
             title="Acceptance Rate"
-            value={organizationMetrics.totalAcceptancePercentage}
+            value={organizationMetrics?.totalAcceptancePercentage || 0}
             change={2.3} // Example change value
             format="percentage"
           />
           <MetricCard
             title="Total Completions"
-            value={organizationMetrics.totalCompletionsCount}
+            value={organizationMetrics?.totalCompletionsCount || 0}
             change={12.5} // Example change value
             format="number"
           />
           <MetricCard
             title="Active Users"
-            value={organizationMetrics.totalActiveUsers}
+            value={organizationMetrics?.totalActiveUsers || 0}
             change={20} // Example change value
             format="users"
           />
           <MetricCard
             title="Time Saved (est.)"
-            value={organizationMetrics.estimatedTimeSaved || 0}
+            value={organizationMetrics?.estimatedTimeSaved || 0}
             change={8.7} // Example change value
             format="time"
           />
@@ -225,9 +234,10 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {organizationMetrics.repositoryMetrics
-                    .sort((a, b) => b.completionsCount - a.completionsCount)
-                    .slice(0, 5)
+                {organizationMetrics.repositoryMetrics && 
+                organizationMetrics.repositoryMetrics
+                  .sort((a, b) => b.completionsCount - a.completionsCount)
+                  .slice(0, 5)
                     .map((repo) => (
                       <tr key={repo.repositoryId}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
@@ -250,12 +260,13 @@ export default function DashboardPage() {
           <div>
             <h2 className="text-lg font-semibold text-gray-800 mb-3">Language Breakdown</h2>
             <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
-              {Object.entries(organizationMetrics.fileExtensionMetrics)
-                .sort(([, a], [, b]) => b.completionsCount - a.completionsCount)
-                .slice(0, 5)
-                .map(([extension, metrics]) => {
-                  const percentage = 
-                    (metrics.completionsCount / organizationMetrics.totalCompletionsCount) * 100;
+              {organizationMetrics.fileExtensionMetrics && 
+                Object.entries(organizationMetrics.fileExtensionMetrics)
+                  .sort(([, a], [, b]) => b.completionsCount - a.completionsCount)
+                  .slice(0, 5)
+                  .map(([extension, metrics]) => {
+                  const percentage = organizationMetrics.totalCompletionsCount ? 
+                    (metrics.completionsCount / organizationMetrics.totalCompletionsCount) * 100 : 0;
                   
                   return (
                     <div key={extension} className="mb-4">

@@ -24,6 +24,11 @@ export const MetricCard: React.FC<MetricCardProps> = ({
       return value;
     }
 
+    // Handle undefined, null, or NaN values
+    if (value === undefined || value === null || isNaN(value)) {
+      return 'N/A';
+    }
+
     switch (format) {
       case 'percentage':
         return `${value.toFixed(2)}%`;
@@ -41,7 +46,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
 
   // Determine change indicator color
   const changeColor = (): string => {
-    if (!change) return 'text-gray-500';
+    if (!change || isNaN(change)) return 'text-gray-500';
     return change >= 0 ? 'text-green-500' : 'text-red-500';
   };
 
@@ -88,13 +93,13 @@ export const MetricCard: React.FC<MetricCardProps> = ({
         <span className="text-3xl font-bold text-gray-900">{formattedValue()}</span>
         {renderSparkline()}
       </div>
-      {change !== undefined && (
+      {change !== undefined && !isNaN(change) && (
         <div className={`mt-2 ${changeColor()} text-sm flex items-center`}>
           <span className="mr-1">
             {change >= 0 ? '▲' : '▼'}
           </span>
           <span>
-            {Math.abs(change).toFixed(1)}% {change >= 0 ? 'increase' : 'decrease'}
+            {Math.abs(change || 0).toFixed(1)}% {change >= 0 ? 'increase' : 'decrease'}
           </span>
         </div>
       )}

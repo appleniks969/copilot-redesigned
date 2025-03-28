@@ -5,6 +5,7 @@ export interface Token {
   value: string;
   organizationName: string;
   scope: string[];
+  teamSlugs?: string[];
 }
 
 /**

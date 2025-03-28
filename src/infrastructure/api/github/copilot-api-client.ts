@@ -1,9 +1,10 @@
-import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { CopilotMetrics } from '@/domain/models/metrics/copilot-metrics';
 import { Trend } from '@/domain/models/metrics/trend';
 import { TrendPoint } from '@/domain/models/metrics/trend-point';
 import { MetricsCalculator } from '@/domain/services/metrics-calculator';
-import { subDays, format, addDays, differenceInDays } from 'date-fns';
+import { env } from '@/infrastructure/config/env';
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+import { addDays, differenceInDays, format, isAfter, isBefore, subDays } from 'date-fns';
 
 /**
  * Options for the Copilot API client
@@ -37,6 +38,45 @@ export class CopilotApiClient {
   }
 
   /**
+   * Validate date range against API limitations
+   * @param startDate Start date to validate
+   * @param endDate End date to validate
+   * @returns Validated date range
+   */
+  private validateDateRange(startDate?: string, endDate?: string): { since?: string; until?: string } {
+    const result: { since?: string; until?: string } = {};
+    
+    // Default end date is today
+    const today = new Date();
+    const endDateObj = endDate ? new Date(endDate) : today;
+    
+    // Ensure end date is not in the future
+    if (isAfter(endDateObj, today)) {
+      result.until = format(today, 'yyyy-MM-dd');
+    } else {
+      result.until = format(endDateObj, 'yyyy-MM-dd');
+    }
+    
+    // If start date is provided
+    if (startDate) {
+      const startDateObj = new Date(startDate);
+      
+      // Calculate the earliest allowed date (28 days before end date)
+      const earliestAllowed = subDays(endDateObj, env.maxHistoricalDays);
+      
+      // If start date is before earliest allowed, adjust it
+      if (isBefore(startDateObj, earliestAllowed)) {
+        console.warn(`Start date adjusted to ${env.maxHistoricalDays} days before end date due to API limitations`);
+        result.since = format(earliestAllowed, 'yyyy-MM-dd');
+      } else {
+        result.since = format(startDateObj, 'yyyy-MM-dd');
+      }
+    }
+    
+    return result;
+  }
+
+  /**
    * Get metrics for an organization
    * @param org Organization name
    * @param startDate Optional start date (ISO 8601)
@@ -51,9 +91,20 @@ export class CopilotApiClient {
     const config: AxiosRequestConfig = {};
     
     if (startDate || endDate) {
+      // Validate and adjust dates based on API limitations
+      const validatedDates = this.validateDateRange(startDate, endDate);
+      
       config.params = {};
-      if (startDate) config.params.since = startDate;
-      if (endDate) config.params.until = endDate;
+      if (validatedDates.since) config.params.since = validatedDates.since;
+      if (validatedDates.until) config.params.until = validatedDates.until;
+      
+      // Log any date adjustments
+      if (startDate && validatedDates.since !== startDate) {
+        console.warn(`Start date adjusted from ${startDate} to ${validatedDates.since} due to API limitations`);
+      }
+      if (endDate && validatedDates.until !== endDate) {
+        console.warn(`End date adjusted from ${endDate} to ${validatedDates.until}`);
+      }
     }
     
     try {
@@ -112,19 +163,35 @@ export class CopilotApiClient {
     const config: AxiosRequestConfig = {};
     
     if (startDate || endDate) {
+      // Validate and adjust dates based on API limitations
+      const validatedDates = this.validateDateRange(startDate, endDate);
+      
       config.params = {};
-      if (startDate) config.params.since = startDate;
-      if (endDate) config.params.until = endDate;
+      if (validatedDates.since) config.params.since = validatedDates.since;
+      if (validatedDates.until) config.params.until = validatedDates.until;
+      
+      // Log any date adjustments
+      if (startDate && validatedDates.since !== startDate) {
+        console.warn(`Start date adjusted from ${startDate} to ${validatedDates.since} due to API limitations`);
+      }
+      if (endDate && validatedDates.until !== endDate) {
+        console.warn(`End date adjusted from ${endDate} to ${validatedDates.until}`);
+      }
     }
     
     try {
-      console.log(`Fetching team metrics for: ${org}/${teamSlug}`);
-      console.log(`API endpoint: /orgs/${org}/team/${teamSlug}/copilot/metrics`);
+      // Ensure the team slug is valid
+      if (!teamSlug || teamSlug === 'teams') {
+        throw new Error(`Invalid team slug: "${teamSlug}"`);
+      }
+
+      // Construct the API URL with correct path structure
+      const endpoint = `/orgs/${org}/team/${teamSlug}/copilot/metrics`;
       
-      const response = await this.client.get(
-        `/orgs/${org}/team/${teamSlug}/copilot/metrics`,
-        config
-      );
+      console.log(`Fetching team metrics for: ${org}/${teamSlug}`);
+      console.log(`API endpoint: ${endpoint}`);
+      
+      const response = await this.client.get(endpoint, config);
       
       // Enhance with derived metrics
       const enhancedMetrics = MetricsCalculator.enhanceWithDerivedMetrics(
@@ -169,13 +236,37 @@ export class CopilotApiClient {
     periods: number = 10,
     periodDays: number = 7
   ): Promise<Trend> {
+    // Validate team slug if provided
+    if (teamSlug === 'teams') {
+      throw new Error('Invalid team slug: "teams" is not allowed as it conflicts with the API path structure');
+    }
+    
+    // Ensure we don't exceed the API limit of 28 days
+    const totalDays = periods * periodDays;
+    let adjustedPeriods = periods;
+    let adjustedPeriodDays = periodDays;
+    
+    if (totalDays > env.maxHistoricalDays) {
+      console.warn(`Requested ${totalDays} days of historical data, but GitHub API only allows ${env.maxHistoricalDays} days.`);
+      
+      // Adjust period parameters to fit within the 28 day limit
+      if (periodDays > env.maxHistoricalDays) {
+        adjustedPeriodDays = env.maxHistoricalDays;
+        adjustedPeriods = 1;
+      } else {
+        adjustedPeriods = Math.floor(env.maxHistoricalDays / periodDays);
+      }
+      
+      console.log(`Adjusted to ${adjustedPeriods} periods of ${adjustedPeriodDays} days each.`);
+    }
+    
     const endDate = new Date();
     const fetchPromises: Promise<{ date: string; metrics: CopilotMetrics }>[] = [];
     
     // Setup promises for parallel API calls with different date ranges
-    for (let i = 0; i < periods; i++) {
-      const periodEndDate = subDays(endDate, i * periodDays);
-      const periodStartDate = subDays(periodEndDate, periodDays - 1);
+    for (let i = 0; i < adjustedPeriods; i++) {
+      const periodEndDate = subDays(endDate, i * adjustedPeriodDays);
+      const periodStartDate = subDays(periodEndDate, adjustedPeriodDays - 1);
       
       const formattedStartDate = format(periodStartDate, 'yyyy-MM-dd');
       const formattedEndDate = format(periodEndDate, 'yyyy-MM-dd');

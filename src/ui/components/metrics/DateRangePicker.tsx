@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { format, subDays, subMonths } from 'date-fns';
+import { format, subDays } from 'date-fns';
+import { env } from '@/infrastructure/config/env';
 
 interface DateRange {
   startDate: Date;
@@ -15,7 +16,7 @@ interface DateRangePickerProps {
 
 export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeRange, setActiveRange] = useState('last30Days');
+  const [activeRange, setActiveRange] = useState('last7Days');
 
   // Predefined date ranges
   const dateRanges: Record<string, DateRange> = {
@@ -24,30 +25,15 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
       endDate: new Date(),
       label: 'Last 7 days',
     },
-    last30Days: {
-      startDate: subDays(new Date(), 30),
+    last14Days: {
+      startDate: subDays(new Date(), 14),
       endDate: new Date(),
-      label: 'Last 30 days',
+      label: 'Last 14 days',
     },
-    last90Days: {
-      startDate: subDays(new Date(), 90),
+    last28Days: {
+      startDate: subDays(new Date(), env.maxHistoricalDays),
       endDate: new Date(),
-      label: 'Last 90 days',
-    },
-    lastMonth: {
-      startDate: subMonths(new Date(), 1),
-      endDate: new Date(),
-      label: 'Last month',
-    },
-    last3Months: {
-      startDate: subMonths(new Date(), 3),
-      endDate: new Date(),
-      label: 'Last 3 months',
-    },
-    last6Months: {
-      startDate: subMonths(new Date(), 6),
-      endDate: new Date(),
-      label: 'Last 6 months',
+      label: `Last ${env.maxHistoricalDays} days`,
     },
   };
 

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import useSWR from 'swr';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { CopilotMetrics } from '@/domain/models/metrics/copilot-metrics';
 import { MetricsService } from '@/application/metrics/metrics-service';
 import { CopilotApiClient } from '@/infrastructure/api/github/copilot-api-client';
@@ -96,7 +96,7 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
   };
 
   // Use SWR for organization metrics with a default date range
-  const defaultStartDate = format(new Date(Date.now() - env.defaultMetricsPeriodDays * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+  const defaultStartDate = format(subDays(new Date(), env.maxHistoricalDays), 'yyyy-MM-dd');
   const defaultEndDate = format(new Date(), 'yyyy-MM-dd');
   
   const { data: organizationMetrics, error: orgError, mutate } = useSWR(

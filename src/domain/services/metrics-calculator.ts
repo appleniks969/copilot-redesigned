@@ -29,6 +29,10 @@ export class MetricsCalculator {
   ): CopilotMetrics {
     const enhancedMetrics = { ...metrics };
     
+    // Ensure required properties exist with defaults
+    enhancedMetrics.repositoryMetrics = metrics.repositoryMetrics || [];
+    enhancedMetrics.fileExtensionMetrics = metrics.fileExtensionMetrics || {};
+    
     // Calculate estimated time saved
     enhancedMetrics.estimatedTimeSaved = this.calculateTimeSaved(
       metrics.totalAcceptanceCount,

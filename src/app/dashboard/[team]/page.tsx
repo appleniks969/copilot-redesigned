@@ -33,8 +33,16 @@ export default function TeamDashboardPage() {
 
   const [errorState, setErrorState] = useState(false);
 
+  // Validate the team slug
+  useEffect(() => {
+    if (teamSlug === 'teams') {
+      console.error('Invalid team slug: "teams" conflicts with the API path structure');
+      setErrorState(true);
+    }
+  }, [teamSlug]);
+
   const fetchData = async () => {
-    if (!token || !teamSlug) return;
+    if (!token || !teamSlug || teamSlug === 'teams') return;
     
     setErrorState(false);
     try {

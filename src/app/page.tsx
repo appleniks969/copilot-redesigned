@@ -22,8 +22,16 @@ export default function Home() {
 
   // Add team to the list
   const addTeam = () => {
-    if (teamInput.trim() && !teamSlugs.includes(teamInput.trim())) {
-      setTeamSlugs([...teamSlugs, teamInput.trim()]);
+    const trimmedTeamInput = teamInput.trim();
+    
+    // Check for invalid team slug
+    if (trimmedTeamInput === 'teams') {
+      setError('"teams" is not allowed as a team slug as it conflicts with the API path');
+      return;
+    }
+    
+    if (trimmedTeamInput && !teamSlugs.includes(trimmedTeamInput)) {
+      setTeamSlugs([...teamSlugs, trimmedTeamInput]);
       setTeamInput('');
     }
   };
@@ -57,6 +65,7 @@ export default function Home() {
         value: token,
         organizationName: orgName,
         scope: ['read:org', 'repo'],
+        teamSlugs: teamSlugs,
       };
       
       // Login with the token

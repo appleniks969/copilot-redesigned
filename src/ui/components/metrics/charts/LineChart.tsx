@@ -33,13 +33,35 @@ export const LineChart: React.FC<LineChartProps> = ({
   color = '#2563eb',
   formatY,
 }) => {
-  // Format the data for Recharts
-  const chartData = data.map((point) => ({
-    date: point.date,
-    value: point.value,
-    // Format date for display
-    formattedDate: format(parseISO(point.date), 'MMM dd'),
-  }));
+  // Format the data for Recharts and filter out invalid points
+  const chartData = data
+    .filter(point => point && point.date && !isNaN(point.value))
+    .map((point) => {
+      try {
+        return {
+          date: point.date,
+          value: point.value,
+          // Format date for display
+          formattedDate: format(parseISO(point.date), 'MMM dd'),
+        };
+      } catch (e) {
+        console.error(`Error formatting date: ${point.date}`, e);
+        return null;
+      }
+    })
+    .filter(point => point !== null);
+
+  // If no valid data, show a message
+  if (!chartData || chartData.length === 0) {
+    return (
+      <div 
+        className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex items-center justify-center" 
+        style={{ height }}
+      >
+        <p className="text-gray-500">No data available for chart</p>
+      </div>
+    );
+  }
 
   // Custom tooltip formatter
   const CustomTooltip = ({ active, payload, label }: any) => {
