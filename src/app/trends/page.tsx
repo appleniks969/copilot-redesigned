@@ -41,40 +41,46 @@ export default function TrendsPage() {
   // Get current metric config
   const currentMetric = availableMetrics.find(m => m.id === selectedMetric) || availableMetrics[0];
 
+  const [errorOccurred, setErrorOccurred] = useState(false);
+
+  const fetchTrendData = async () => {
+    if (!token) return;
+    
+    setLoading(true);
+    setError(null);
+    setErrorOccurred(false);
+    
+    try {
+      const apiClient = new CopilotApiClient({
+        token: token.value,
+        secondsPerSuggestion: env.secondsPerSuggestion,
+      });
+      
+      const teamSlug = selectedScope === 'team' ? selectedTeam : undefined;
+      
+      const trend = await apiClient.getMetricsTimeSeries(
+        token.organizationName,
+        selectedMetric,
+        teamSlug,
+        currentPeriod.periods,
+        currentPeriod.days
+      );
+      
+      setTrendData(trend);
+    } catch (err) {
+      console.error('Error fetching trend data:', err);
+      setError('Failed to fetch trend data. Please try again.');
+      setErrorOccurred(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Fetch trend data
   useEffect(() => {
-    const fetchTrendData = async () => {
-      if (!token) return;
-      
-      setLoading(true);
-      setError(null);
-      
-      try {
-        const apiClient = new CopilotApiClient({
-          token: token.value,
-          secondsPerSuggestion: env.secondsPerSuggestion,
-        });
-        
-        const teamSlug = selectedScope === 'team' ? selectedTeam : undefined;
-        
-        const trend = await apiClient.getMetricsTimeSeries(
-          token.organizationName,
-          selectedMetric,
-          teamSlug,
-          currentPeriod.periods,
-          currentPeriod.days
-        );
-        
-        setTrendData(trend);
-      } catch (err) {
-        console.error('Error fetching trend data:', err);
-        setError('Failed to fetch trend data. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchTrendData();
+    if (token && !errorOccurred) {
+      fetchTrendData();
+    }
   }, [token, selectedMetric, selectedPeriod, selectedScope, selectedTeam, currentPeriod.periods, currentPeriod.days]);
 
   // Format y-axis values based on metric
@@ -108,7 +114,10 @@ export default function TrendsPage() {
             </label>
             <select
               value={selectedMetric}
-              onChange={(e) => setSelectedMetric(e.target.value)}
+              onChange={(e) => {
+                setSelectedMetric(e.target.value);
+                setErrorOccurred(false); // Reset error state
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {availableMetrics.map((metric) => (
@@ -126,7 +135,10 @@ export default function TrendsPage() {
             </label>
             <select
               value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
+              onChange={(e) => {
+                setSelectedPeriod(e.target.value);
+                setErrorOccurred(false); // Reset error state
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {timePeriods.map((period) => (
@@ -144,7 +156,10 @@ export default function TrendsPage() {
             </label>
             <select
               value={selectedScope}
-              onChange={(e) => setSelectedScope(e.target.value)}
+              onChange={(e) => {
+                setSelectedScope(e.target.value);
+                setErrorOccurred(false); // Reset error state
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="organization">Organization</option>
@@ -160,7 +175,10 @@ export default function TrendsPage() {
               </label>
               <select
                 value={selectedTeam}
-                onChange={(e) => setSelectedTeam(e.target.value)}
+                onChange={(e) => {
+                  setSelectedTeam(e.target.value);
+                  setErrorOccurred(false); // Reset error state
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select a team</option>
@@ -188,6 +206,12 @@ export default function TrendsPage() {
         ) : error ? (
           <div className="bg-red-50 p-4 rounded-md text-red-700">
             <p>{error}</p>
+            <button
+              onClick={fetchTrendData}
+              className="mt-4 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-md transition-colors"
+            >
+              Retry
+            </button>
           </div>
         ) : trendData && trendData.points.length > 0 ? (
           <div className="h-80">

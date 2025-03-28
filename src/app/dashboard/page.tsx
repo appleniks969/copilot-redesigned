@@ -24,46 +24,69 @@ export default function DashboardPage() {
   const [trendLoading, setTrendLoading] = useState(false);
 
   // Fetch organization metrics on component mount and when date range changes
-  useEffect(() => {
-    if (token) {
-      fetchOrganizationMetrics(dateRange.startDate, dateRange.endDate);
+  const [errorState, setErrorState] = useState(false);
+
+  const fetchData = async () => {
+    if (!token) return;
+    
+    setErrorState(false);
+    try {
+      await fetchOrganizationMetrics(dateRange.startDate, dateRange.endDate);
+    } catch (err) {
+      console.error('Error fetching organization metrics:', err);
+      setErrorState(true);
     }
-  }, [token, dateRange, fetchOrganizationMetrics]);
+  };
+
+  // Initial data fetch and when parameters change
+  useEffect(() => {
+    // Only fetch if we're not in an error state
+    if (token && !errorState) {
+      fetchData();
+    }
+  }, [token, dateRange]); // Removed fetchOrganizationMetrics from dependencies
 
   // Fetch trend data
-  useEffect(() => {
-    const fetchTrendData = async () => {
-      if (!token) return;
-      
-      setTrendLoading(true);
-      
-      try {
-        const apiClient = new CopilotApiClient({
-          token: token.value,
-        });
-        
-        const trend = await apiClient.getMetricsTimeSeries(
-          token.organizationName,
-          'completions',
-          undefined, // No team slug for org-level metrics
-          10, // 10 periods
-          7 // 7 days per period
-        );
-        
-        setCompletionsTrend(trend);
-      } catch (err) {
-        console.error('Error fetching trend data:', err);
-      } finally {
-        setTrendLoading(false);
-      }
-    };
+  const [trendErrorState, setTrendErrorState] = useState(false);
+
+  const fetchTrendData = async () => {
+    if (!token) return;
     
-    fetchTrendData();
+    setTrendLoading(true);
+    setTrendErrorState(false);
+    
+    try {
+      const apiClient = new CopilotApiClient({
+        token: token.value,
+      });
+      
+      const trend = await apiClient.getMetricsTimeSeries(
+        token.organizationName,
+        'completions',
+        undefined, // No team slug for org-level metrics
+        10, // 10 periods
+        7 // 7 days per period
+      );
+      
+      setCompletionsTrend(trend);
+    } catch (err) {
+      console.error('Error fetching trend data:', err);
+      setTrendErrorState(true);
+    } finally {
+      setTrendLoading(false);
+    }
+  };
+  
+  useEffect(() => {
+    if (token && !trendErrorState) {
+      fetchTrendData();
+    }
   }, [token]);
 
   // Handle date range change
   const handleDateRangeChange = (range: { startDate: string; endDate: string }) => {
     setDateRange(range);
+    setErrorState(false); // Reset error state to allow new fetch
   };
 
   // Loading state
@@ -84,6 +107,12 @@ export default function DashboardPage() {
         <div className="bg-red-50 p-4 rounded-md text-red-700">
           <h2 className="text-lg font-semibold">Error</h2>
           <p>{error}</p>
+          <button
+            onClick={fetchData}
+            className="mt-4 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-md transition-colors"
+          >
+            Retry
+          </button>
         </div>
       </DashboardLayout>
     );
@@ -132,6 +161,16 @@ export default function DashboardPage() {
         {trendLoading ? (
           <div className="h-64 flex items-center justify-center bg-white rounded-lg shadow-sm border border-gray-100">
             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : trendErrorState ? (
+          <div className="h-64 flex flex-col items-center justify-center bg-white rounded-lg shadow-sm border border-gray-100">
+            <p className="text-red-500 mb-4">Failed to load trend data</p>
+            <button
+              onClick={fetchTrendData}
+              className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-md transition-colors"
+            >
+              Retry
+            </button>
           </div>
         ) : completionsTrend ? (
           <LineChart

@@ -41,47 +41,55 @@ export default function ComparisonPage() {
     } else {
       setSelectedTeams([...selectedTeams, teamSlug]);
     }
+    setErrorOccurred(false); // Reset error state to allow new fetch
+  };
+
+  const [errorOccurred, setErrorOccurred] = useState(false);
+
+  const fetchComparisonData = async () => {
+    if (!token || selectedTeams.length === 0) return;
+    
+    setLoading(true);
+    setError(null);
+    setErrorOccurred(false);
+    
+    try {
+      const apiClient = new CopilotApiClient({
+        token: token.value,
+        secondsPerSuggestion: env.secondsPerSuggestion,
+      });
+      
+      const metricsService = new MetricsService(apiClient);
+      
+      const result = await metricsService.getTeamComparisonData(
+        token.organizationName,
+        selectedTeams,
+        selectedMetric,
+        dateRange.startDate,
+        dateRange.endDate
+      );
+      
+      setComparisonData(result);
+    } catch (err) {
+      console.error('Error fetching comparison data:', err);
+      setError('Failed to fetch comparison data. Please try again.');
+      setErrorOccurred(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Fetch comparison data
   useEffect(() => {
-    const fetchComparisonData = async () => {
-      if (!token || selectedTeams.length === 0) return;
-      
-      setLoading(true);
-      setError(null);
-      
-      try {
-        const apiClient = new CopilotApiClient({
-          token: token.value,
-          secondsPerSuggestion: env.secondsPerSuggestion,
-        });
-        
-        const metricsService = new MetricsService(apiClient);
-        
-        const result = await metricsService.getTeamComparisonData(
-          token.organizationName,
-          selectedTeams,
-          selectedMetric,
-          dateRange.startDate,
-          dateRange.endDate
-        );
-        
-        setComparisonData(result);
-      } catch (err) {
-        console.error('Error fetching comparison data:', err);
-        setError('Failed to fetch comparison data. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchComparisonData();
+    if (token && selectedTeams.length > 0 && !errorOccurred) {
+      fetchComparisonData();
+    }
   }, [token, selectedTeams, selectedMetric, dateRange]);
 
   // Handle date range change
   const handleDateRangeChange = (range: { startDate: string; endDate: string }) => {
     setDateRange(range);
+    setErrorOccurred(false); // Reset error state to allow new fetch
   };
 
   // Format value based on metric
@@ -148,7 +156,10 @@ export default function ComparisonPage() {
             </label>
             <select
               value={selectedMetric}
-              onChange={(e) => setSelectedMetric(e.target.value)}
+              onChange={(e) => {
+                setSelectedMetric(e.target.value);
+                setErrorOccurred(false); // Reset error state
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {comparisonMetrics.map((metric) => (
@@ -183,8 +194,14 @@ export default function ComparisonPage() {
         {error && (
           <div className="p-4">
             <div className="bg-red-50 p-4 rounded-md text-red-700">
-              <p>{error}</p>
-            </div>
+            <p>{error}</p>
+              <button
+              onClick={fetchComparisonData}
+              className="mt-4 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-md transition-colors"
+            >
+              Retry
+            </button>
+          </div>
           </div>
         )}
         
