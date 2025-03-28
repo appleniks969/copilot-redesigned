@@ -57,14 +57,100 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
     if (!metrics) return null;
     
     console.log('Filtering metrics by date range:', { startDate, endDate });
-    console.log('Original metrics:', metrics);
     
-    // Create a copy of the metrics to avoid modifying the original
+    // Check if we actually have data for the full 28-day range in metrics
+    // If not, we'll just use the limited data we have with a warning
+    const hasFullData = metrics.dateRange && 
+                        metrics.dateRange.startDate && 
+                        metrics.dateRange.endDate;
+    
+    if (!hasFullData) {
+      console.warn('Cannot properly filter metrics: missing date range information in source data');
+      return metrics;
+    }
+    
+    // Calculate what fraction of the full period our filter represents
+    const fullRangeStart = parseISO(metrics.dateRange.startDate);
+    const fullRangeEnd = parseISO(metrics.dateRange.endDate);
+    const filterStart = parseISO(startDate);
+    const filterEnd = parseISO(endDate);
+    
+    // Calculate the total days in each range
+    const fullRangeDays = Math.max(1, Math.round((fullRangeEnd.getTime() - fullRangeStart.getTime()) / (24 * 60 * 60 * 1000)));
+    
+    // Calculate overlap of selected range with available data range
+    const effectiveStartDate = new Date(Math.max(filterStart.getTime(), fullRangeStart.getTime()));
+    const effectiveEndDate = new Date(Math.min(filterEnd.getTime(), fullRangeEnd.getTime()));
+    
+    // If there's no overlap, return zero metrics
+    if (effectiveEndDate < effectiveStartDate) {
+      console.warn('Selected date range has no overlap with available data');
+      
+      // Return a metrics object with zeros
+      return {
+        totalCompletionsCount: 0,
+        totalSuggestionCount: 0,
+        totalAcceptanceCount: 0,
+        totalAcceptancePercentage: 0,
+        totalActiveUsers: 0,
+        avgCompletionsPerUser: 0,
+        avgSuggestionsPerUser: 0,
+        avgAcceptancePercentage: 0,
+        estimatedTimeSaved: 0,
+        repositoryMetrics: [],
+        fileExtensionMetrics: {},
+        dateRange: {
+          startDate,
+          endDate
+        }
+      };
+    }
+    
+    const filteredDays = Math.max(1, Math.round((effectiveEndDate.getTime() - effectiveStartDate.getTime()) / (24 * 60 * 60 * 1000)));
+    const daysRatio = filteredDays / fullRangeDays;
+    
+    console.log(`Date range ratio: ${daysRatio} (${filteredDays}/${fullRangeDays} days)`);
+    
+    // Scale the metrics linearly based on the days ratio
+    // This is an approximation but better than no filtering at all
     const filtered: CopilotMetrics = {
-      ...metrics,
+      totalCompletionsCount: Math.round(metrics.totalCompletionsCount * daysRatio),
+      totalSuggestionCount: Math.round(metrics.totalSuggestionCount * daysRatio),
+      totalAcceptanceCount: Math.round(metrics.totalAcceptanceCount * daysRatio),
+      // Percentages and averages don't need scaling
+      totalAcceptancePercentage: metrics.totalAcceptancePercentage,
+      // For users, we'll assume consistent usage across the period
+      totalActiveUsers: Math.round(metrics.totalActiveUsers * daysRatio),
+      avgCompletionsPerUser: metrics.avgCompletionsPerUser,
+      avgSuggestionsPerUser: metrics.avgSuggestionsPerUser,
+      avgAcceptancePercentage: metrics.avgAcceptancePercentage,
+      // Scale estimated time saved
+      estimatedTimeSaved: metrics.estimatedTimeSaved ? metrics.estimatedTimeSaved * daysRatio : 0,
+      // Filter repositories - this is an approximation assuming uniform usage
+      repositoryMetrics: metrics.repositoryMetrics.map(repo => ({
+        ...repo,
+        completionsCount: Math.round(repo.completionsCount * daysRatio),
+        suggestionsCount: Math.round(repo.suggestionsCount * daysRatio),
+        acceptanceCount: Math.round(repo.acceptanceCount * daysRatio),
+        // Percentage stays the same
+        acceptancePercentage: repo.acceptancePercentage
+      })),
+      // Filter file extensions
+      fileExtensionMetrics: Object.entries(metrics.fileExtensionMetrics).reduce((acc, [ext, extMetrics]) => {
+        acc[ext] = {
+          ...extMetrics,
+          completionsCount: Math.round(extMetrics.completionsCount * daysRatio),
+          suggestionsCount: Math.round(extMetrics.suggestionsCount * daysRatio),
+          acceptanceCount: Math.round(extMetrics.acceptanceCount * daysRatio),
+          // Percentage stays the same
+          acceptancePercentage: extMetrics.acceptancePercentage
+        };
+        return acc;
+      }, {} as Record<string, any>),
+      // Update the date range to reflect the filtered period
       dateRange: {
-        startDate,
-        endDate
+        startDate: format(effectiveStartDate, 'yyyy-MM-dd'),
+        endDate: format(effectiveEndDate, 'yyyy-MM-dd')
       }
     };
     

@@ -129,9 +129,13 @@ export default function DashboardPage() {
       
       {/* API Limitation Notice */}
       <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6 text-sm">
-        <p className="text-blue-800">
-          <span className="font-medium">Note:</span> GitHub Copilot Metrics API has a limitation of {env.maxHistoricalDays} days of historical data. 
+        <p className="text-blue-800 mb-2">
+          <span className="font-medium">API Limitation:</span> GitHub Copilot Metrics API has a limitation of {env.maxHistoricalDays} days of historical data. 
           Data is loaded once and filtered client-side based on your selected date range.
+        </p>
+        <p className="text-blue-800">
+          <span className="font-medium">Data Approximation:</span> When filtering by date range, metrics are approximated by scaling the {env.maxHistoricalDays}-day totals 
+          based on the number of days in your selection. This assumes uniform usage across the period.
         </p>
       </div>
       
@@ -141,26 +145,31 @@ export default function DashboardPage() {
           <MetricCard
             title="Acceptance Rate"
             value={organizationMetrics?.totalAcceptancePercentage || 0}
-            change={2.3} // Example change value
+            change={organizationMetrics?.totalAcceptancePercentage - (organizationMetrics?.avgAcceptancePercentage || 0)}
             format="percentage"
+            tooltip="Difference from average acceptance rate"
           />
           <MetricCard
             title="Total Completions"
             value={organizationMetrics?.totalCompletionsCount || 0}
-            change={12.5} // Example change value
+            // Calculate completions per day compared to global average
+            change={null} // Removed hardcoded example
             format="number"
           />
           <MetricCard
             title="Active Users"
             value={organizationMetrics?.totalActiveUsers || 0}
-            change={20} // Example change value
+            // No meaningful change calculation available
+            change={null}
             format="users"
           />
           <MetricCard
             title="Time Saved (est.)"
             value={organizationMetrics?.estimatedTimeSaved || 0}
-            change={8.7} // Example change value
+            // No meaningful change calculation available
+            change={null}
             format="time"
+            tooltip="Estimated based on acceptance count and configured time per suggestion"
           />
         </div>
       )}

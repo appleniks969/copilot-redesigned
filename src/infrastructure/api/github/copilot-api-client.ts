@@ -321,39 +321,63 @@ export class CopilotApiClient {
     const endDate = new Date();
     const points: TrendPoint[] = [];
     
-    // Create points for each period by filtering the metrics data client-side
+    // We'll create more accurate trend data by calculating segments of time
+    // Since we're estimating trends with limited data, add a disclaimer
+    const metricsValue = (() => {
+      switch (metric) {
+        case 'completions': return metrics.totalCompletionsCount;
+        case 'acceptanceRate': return metrics.totalAcceptancePercentage;
+        case 'activeUsers': return metrics.totalActiveUsers;
+        case 'timeSaved': return metrics.estimatedTimeSaved || 0;
+        default: return metrics.totalCompletionsCount;
+      }
+    })();
+    
+    // Get the full range of available data
+    const dataStartDate = metrics.dateRange?.startDate 
+      ? parseISO(metrics.dateRange.startDate) 
+      : subDays(new Date(), env.maxHistoricalDays);
+    
+    const dataEndDate = metrics.dateRange?.endDate 
+      ? parseISO(metrics.dateRange.endDate) 
+      : new Date();
+    
+    // Calculate actual days of data we have
+    const dataDays = Math.max(1, differenceInDays(dataEndDate, dataStartDate));
+    
+    // If the metric is a percentage or rate, we don't distribute it over time
+    const isRateMetric = metric === 'acceptanceRate';
+    
+    // Create points for each period
     for (let i = 0; i < adjustedPeriods; i++) {
       const periodEndDate = subDays(endDate, i * adjustedPeriodDays);
       const periodStartDate = subDays(periodEndDate, adjustedPeriodDays - 1);
       
-      const formattedEndDate = format(periodEndDate, 'yyyy-MM-dd');
+      // Calculate overlap between this period and our data range
+      const overlapStart = new Date(Math.max(periodStartDate.getTime(), dataStartDate.getTime()));
+      const overlapEnd = new Date(Math.min(periodEndDate.getTime(), dataEndDate.getTime()));
       
-      // Extract metric value for this period
-      let value = 0;
+      // If no overlap, use zero or the rate value
+      let periodValue = 0;
       
-      // Extract the requested metric
-      switch (metric) {
-        case 'completions':
-          value = metrics.totalCompletionsCount;
-          break;
-        case 'acceptanceRate':
-          value = metrics.totalAcceptancePercentage;
-          break;
-        case 'activeUsers':
-          value = metrics.totalActiveUsers;
-          break;
-        case 'timeSaved':
-          value = metrics.estimatedTimeSaved || 0;
-          break;
-        default:
-          value = metrics.totalCompletionsCount;
+      if (overlapEnd >= overlapStart) {
+        // Calculate the percentage of the data period that this time period represents
+        const overlapDays = Math.max(0, differenceInDays(overlapEnd, overlapStart));
+        
+        if (isRateMetric) {
+          // For rates/percentages, use the full value
+          periodValue = metricsValue;
+        } else {
+          // For counts, scale by days
+          const scaleFactor = overlapDays / dataDays;
+          periodValue = Math.round(metricsValue * scaleFactor);
+        }
       }
       
-      // Adjust value based on period size (simplified approximation)
-      // In a real implementation, you'd need a more sophisticated approach to segment the data
-      value = Math.round(value / (env.maxHistoricalDays / adjustedPeriodDays));
-      
-      points.push({ date: formattedEndDate, value });
+      points.push({ 
+        date: format(periodEndDate, 'yyyy-MM-dd'), 
+        value: periodValue 
+      });
     }
     
     // Process results

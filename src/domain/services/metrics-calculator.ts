@@ -5,16 +5,28 @@ import { CopilotMetrics } from '../models/metrics/copilot-metrics';
  */
 export class MetricsCalculator {
   /**
-   * Calculate time saved based on acceptance count
+   * Calculate estimated time saved based on acceptance count
+   * 
+   * This is an approximation that assumes each accepted suggestion saves the developer
+   * a certain amount of time (defined by secondsPerSuggestion). The actual time saved
+   * may vary based on multiple factors including:
+   *   - Complexity of the code being written
+   *   - Developer's typing speed and familiarity with the language
+   *   - Length and complexity of the accepted suggestion
+   * 
+   * The default value of 55 seconds per suggestion is based on industry estimates and
+   * can be configured in the application environment settings.
+   * 
    * @param acceptanceCount Number of accepted suggestions
    * @param secondsPerSuggestion Average time saved per suggestion in seconds
-   * @returns Time saved in hours
+   * @returns Estimated time saved in hours (rounded to 2 decimal places)
    */
   static calculateTimeSaved(
     acceptanceCount: number,
     secondsPerSuggestion: number = 55
   ): number {
-    return (acceptanceCount * secondsPerSuggestion) / 3600; // Convert to hours
+    // Convert to hours and round to 2 decimal places for readability
+    return Math.round((acceptanceCount * secondsPerSuggestion) / 36) / 100;
   }
 
   /**
