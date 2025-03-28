@@ -44,6 +44,7 @@ export default function ComparisonPage() {
     
     setLoading(true);
     setError(null);
+    // Note: We don't reset errorOccurred here to prevent infinite retry loops
     
     try {
       const apiClient = new CopilotApiClient({
@@ -66,8 +67,8 @@ export default function ComparisonPage() {
       );
       
       setComparisonData(result);
-      // If fetch succeeds, ensure errorOccurred is false
-      setErrorOccurred(false); 
+      // Only set errorOccurred to false when successful
+      setErrorOccurred(false);
     } catch (err) {
       console.error('Error fetching comparison data:', err);
       setError('Failed to fetch comparison data. Please try again.');
@@ -108,6 +109,12 @@ export default function ComparisonPage() {
       }
       return highest;
     }, { team: entries[0][0], value: entries[0][1] });
+  };
+
+  // Define the retry handler
+  const handleRetry = () => {
+    setErrorOccurred(false); // Reset error state first
+    // The useEffect will pick up the change and trigger fetchComparisonData
   };
 
   const highestValueTeam = getHighestValueTeam();
@@ -191,14 +198,14 @@ export default function ComparisonPage() {
         {error && (
           <div className="p-4">
             <div className="bg-red-50 p-4 rounded-md text-red-700">
-            <p>{error}</p>
+              <p>{error}</p>
               <button
-              onClick={handleRetry}
-              className="mt-4 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-md transition-colors"
-            >
-              Retry
-            </button>
-          </div>
+                onClick={handleRetry}
+                className="mt-4 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-md transition-colors"
+              >
+                Retry
+              </button>
+            </div>
           </div>
         )}
         
