@@ -1,14 +1,12 @@
 'use client';
-
 import React, { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/ui/components/layout/DashboardLayout';
-import { DateRangePicker } from '@/ui/components/metrics/DateRangePicker';
 import { useAuth } from '@/ui/context/AuthContext';
 import { useMetrics } from '@/ui/context/MetricsContext';
 import { CopilotApiClient } from '@/infrastructure/api/github/copilot-api-client';
 import { ComparisonResult } from '@/domain/models/metrics/comparison-result';
 import { MetricsService } from '@/application/metrics/metrics-service';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { env } from '@/infrastructure/config/env';
 
 // Available metrics to compare
@@ -25,14 +23,11 @@ export default function ComparisonPage() {
   
   const [selectedMetric, setSelectedMetric] = useState('completions');
   const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
-  const [dateRange, setDateRange] = useState({
-    startDate: format(new Date(Date.now() - env.defaultMetricsPeriodDays * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'),
-    endDate: format(new Date(), 'yyyy-MM-dd'),
-  });
   
   const [comparisonData, setComparisonData] = useState<ComparisonResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorOccurred, setErrorOccurred] = useState(false);
 
   // Toggle team selection
   const toggleTeamSelection = (teamSlug: string) => {
@@ -43,15 +38,12 @@ export default function ComparisonPage() {
     }
     setErrorOccurred(false); // Reset error state to allow new fetch
   };
-
-  const [errorOccurred, setErrorOccurred] = useState(false);
-
+  
   const fetchComparisonData = async () => {
     if (!token || selectedTeams.length === 0) return;
     
     setLoading(true);
     setError(null);
-    setErrorOccurred(false);
     
     try {
       const apiClient = new CopilotApiClient({
@@ -61,15 +53,21 @@ export default function ComparisonPage() {
       
       const metricsService = new MetricsService(apiClient);
       
+      // Always use full data range (28 days)
+      const fullStartDate = format(subDays(new Date(), env.maxHistoricalDays), 'yyyy-MM-dd');
+      const fullEndDate = format(new Date(), 'yyyy-MM-dd');
+      
       const result = await metricsService.getTeamComparisonData(
         token.organizationName,
         selectedTeams,
         selectedMetric,
-        dateRange.startDate,
-        dateRange.endDate
+        fullStartDate,
+        fullEndDate
       );
       
       setComparisonData(result);
+      // If fetch succeeds, ensure errorOccurred is false
+      setErrorOccurred(false); 
     } catch (err) {
       console.error('Error fetching comparison data:', err);
       setError('Failed to fetch comparison data. Please try again.');
@@ -84,13 +82,10 @@ export default function ComparisonPage() {
     if (token && selectedTeams.length > 0 && !errorOccurred) {
       fetchComparisonData();
     }
-  }, [token, selectedTeams, selectedMetric, dateRange]);
-
-  // Handle date range change
-  const handleDateRangeChange = (range: { startDate: string; endDate: string }) => {
-    setDateRange(range);
-    setErrorOccurred(false); // Reset error state to allow new fetch
-  };
+    // Only re-run when these specific values change, not when fetchComparisonData is recreated
+  }, [token, selectedTeams, selectedMetric, errorOccurred]);
+  // ⚠️ NOTE: We're intentionally excluding fetchComparisonData from dependencies
+  // to prevent infinite loops, as it's defined in the component body
 
   // Format value based on metric
   const formatValue = (value: number) => {
@@ -121,7 +116,9 @@ export default function ComparisonPage() {
     <DashboardLayout>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Team Comparison</h1>
-        <DateRangePicker onChange={handleDateRangeChange} />
+        <div className="text-sm text-gray-500">
+          Showing data for the last {env.maxHistoricalDays} days
+        </div>
       </div>
       
       {/* Control Panel */}
@@ -196,7 +193,7 @@ export default function ComparisonPage() {
             <div className="bg-red-50 p-4 rounded-md text-red-700">
             <p>{error}</p>
               <button
-              onClick={fetchComparisonData}
+              onClick={handleRetry}
               className="mt-4 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-md transition-colors"
             >
               Retry

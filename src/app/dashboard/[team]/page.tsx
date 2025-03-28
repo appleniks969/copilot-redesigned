@@ -1,15 +1,12 @@
 'use client';
-
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/ui/components/layout/DashboardLayout';
 import { MetricCard } from '@/ui/components/metrics/cards/MetricCard';
 import { LineChart } from '@/ui/components/metrics/charts/LineChart';
-import { DateRangePicker } from '@/ui/components/metrics/DateRangePicker';
 import { useMetrics } from '@/ui/context/MetricsContext';
 import { useAuth } from '@/ui/context/AuthContext';
 import { Trend } from '@/domain/models/metrics/trend';
-import { format, subDays } from 'date-fns';
 import { env } from '@/infrastructure/config/env';
 
 export default function TeamDashboardPage() {
@@ -19,23 +16,17 @@ export default function TeamDashboardPage() {
   
   const { token, isAuthenticated } = useAuth();
   const { 
-    filteredTeamMetrics,
+    teamMetrics,
     loading, 
     error, 
     fetchTeamMetrics,
-    filterByDateRange,
     refreshData
   } = useMetrics();
-  
-  const [dateRange, setDateRange] = useState({
-    startDate: format(subDays(new Date(), 7), 'yyyy-MM-dd'), // Default to last 7 days
-    endDate: format(new Date(), 'yyyy-MM-dd'),
-  });
   
   const [refreshing, setRefreshing] = useState(false);
   
   // Get the current team's metrics
-  const currentTeamMetrics = filteredTeamMetrics[teamSlug];
+  const currentTeamMetrics = teamMetrics[teamSlug];
   const [errorState, setErrorState] = useState(false);
 
   // Validate the team slug
@@ -53,12 +44,9 @@ export default function TeamDashboardPage() {
       
       try {
         // Check if we already have data for this team
-        if (!filteredTeamMetrics[teamSlug]) {
+        if (!teamMetrics[teamSlug]) {
           await fetchTeamMetrics(teamSlug);
         }
-        
-        // Apply current date filter
-        filterByDateRange(dateRange.startDate, dateRange.endDate);
       } catch (err) {
         console.error('Error fetching team metrics:', err);
         setErrorState(true);
@@ -68,13 +56,7 @@ export default function TeamDashboardPage() {
     if (isAuthenticated) {
       fetchData();
     }
-  }, [token, teamSlug, isAuthenticated]);
-
-  // Handle date range change - filter existing data
-  const handleDateRangeChange = (range: { startDate: string; endDate: string }) => {
-    setDateRange(range);
-    filterByDateRange(range.startDate, range.endDate);
-  };
+  }, [token, teamSlug, isAuthenticated, teamMetrics, fetchTeamMetrics, errorState]);
 
   // Handle refresh button click
   const handleRefresh = async () => {
@@ -86,9 +68,6 @@ export default function TeamDashboardPage() {
     try {
       // Re-fetch data for this team
       await fetchTeamMetrics(teamSlug);
-      
-      // Re-apply current date filter
-      filterByDateRange(dateRange.startDate, dateRange.endDate);
     } catch (err) {
       console.error('Error refreshing team data:', err);
       setErrorState(true);
@@ -143,7 +122,6 @@ export default function TeamDashboardPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">{teamSlug}</h1>
         <div className="flex items-center gap-3">
-          <DateRangePicker onChange={handleDateRangeChange} />
           <button
             onClick={handleRefresh}
             className={`flex items-center px-3 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-md text-sm hover:bg-blue-100 ${
@@ -174,7 +152,7 @@ export default function TeamDashboardPage() {
       <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6 text-sm">
         <p className="text-blue-800">
           <span className="font-medium">Note:</span> GitHub Copilot Metrics API has a limitation of {env.maxHistoricalDays} days of historical data. 
-          Data is loaded once and filtered client-side based on your selected date range.
+          The dashboard always shows data for the last {env.maxHistoricalDays} days.
         </p>
       </div>
       
