@@ -18,7 +18,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
   const [isOpen, setIsOpen] = useState(false);
   const [activeRange, setActiveRange] = useState('last7Days');
 
-  // Predefined date ranges
+  // Predefined date ranges - all within the 28-day limit
   const dateRanges: Record<string, DateRange> = {
     last7Days: {
       startDate: subDays(new Date(), 7),
@@ -29,6 +29,11 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
       startDate: subDays(new Date(), 14),
       endDate: new Date(),
       label: 'Last 14 days',
+    },
+    last21Days: {
+      startDate: subDays(new Date(), 21),
+      endDate: new Date(),
+      label: 'Last 21 days',
     },
     last28Days: {
       startDate: subDays(new Date(), env.maxHistoricalDays),

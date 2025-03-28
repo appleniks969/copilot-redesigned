@@ -1,36 +1,41 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/ui/components/layout/DashboardLayout';
 import { MetricCard } from '@/ui/components/metrics/cards/MetricCard';
 import { LineChart } from '@/ui/components/metrics/charts/LineChart';
 import { DateRangePicker } from '@/ui/components/metrics/DateRangePicker';
 import { useMetrics } from '@/ui/context/MetricsContext';
 import { useAuth } from '@/ui/context/AuthContext';
-import { CopilotApiClient } from '@/infrastructure/api/github/copilot-api-client';
 import { Trend } from '@/domain/models/metrics/trend';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { env } from '@/infrastructure/config/env';
 
 export default function TeamDashboardPage() {
   const params = useParams();
+  const router = useRouter();
   const teamSlug = params.team as string;
   
-  const { token } = useAuth();
-  const { teamMetrics, loading, error, fetchTeamMetrics } = useMetrics();
+  const { token, isAuthenticated } = useAuth();
+  const { 
+    filteredTeamMetrics,
+    loading, 
+    error, 
+    fetchTeamMetrics,
+    filterByDateRange,
+    refreshData
+  } = useMetrics();
   
   const [dateRange, setDateRange] = useState({
-    startDate: format(new Date(Date.now() - env.defaultMetricsPeriodDays * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'),
+    startDate: format(subDays(new Date(), 7), 'yyyy-MM-dd'), // Default to last 7 days
     endDate: format(new Date(), 'yyyy-MM-dd'),
   });
   
-  const [completionsTrend, setCompletionsTrend] = useState<Trend | null>(null);
-  const [trendLoading, setTrendLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   
   // Get the current team's metrics
-  const currentTeamMetrics = teamMetrics[teamSlug];
-
+  const currentTeamMetrics = filteredTeamMetrics[teamSlug];
   const [errorState, setErrorState] = useState(false);
 
   // Validate the team slug
@@ -41,67 +46,55 @@ export default function TeamDashboardPage() {
     }
   }, [teamSlug]);
 
-  const fetchData = async () => {
-    if (!token || !teamSlug || teamSlug === 'teams') return;
-    
-    setErrorState(false);
-    try {
-      await fetchTeamMetrics(teamSlug, dateRange.startDate, dateRange.endDate);
-    } catch (err) {
-      console.error('Error fetching team metrics:', err);
-      setErrorState(true);
-    }
-  };
-
-  // Fetch team metrics on component mount and when date range changes
+  // Fetch team data if needed
   useEffect(() => {
-    if (token && teamSlug && !errorState) {
+    const fetchData = async () => {
+      if (!token || !teamSlug || teamSlug === 'teams' || errorState) return;
+      
+      try {
+        // Check if we already have data for this team
+        if (!filteredTeamMetrics[teamSlug]) {
+          await fetchTeamMetrics(teamSlug);
+        }
+        
+        // Apply current date filter
+        filterByDateRange(dateRange.startDate, dateRange.endDate);
+      } catch (err) {
+        console.error('Error fetching team metrics:', err);
+        setErrorState(true);
+      }
+    };
+    
+    if (isAuthenticated) {
       fetchData();
     }
-  }, [token, teamSlug, dateRange]);
+  }, [token, teamSlug, isAuthenticated]);
 
-  // Fetch trend data
-  const [trendErrorState, setTrendErrorState] = useState(false);
-
-  const fetchTrendData = async () => {
-    if (!token || !teamSlug) return;
-    
-    setTrendLoading(true);
-    setTrendErrorState(false);
-    
-    try {
-      const apiClient = new CopilotApiClient({
-        token: token.value,
-        secondsPerSuggestion: env.secondsPerSuggestion,
-      });
-      
-      const trend = await apiClient.getMetricsTimeSeries(
-        token.organizationName,
-        'completions',
-        teamSlug,
-        10, // 10 periods
-        7  // 7 days per period
-      );
-      
-      setCompletionsTrend(trend);
-    } catch (err) {
-      console.error('Error fetching trend data:', err);
-      setTrendErrorState(true);
-    } finally {
-      setTrendLoading(false);
-    }
-  };
-  
-  useEffect(() => {
-    if (token && teamSlug && !trendErrorState) {
-      fetchTrendData();
-    }
-  }, [token, teamSlug]);
-
-  // Handle date range change
+  // Handle date range change - filter existing data
   const handleDateRangeChange = (range: { startDate: string; endDate: string }) => {
     setDateRange(range);
-    setErrorState(false); // Reset error state to allow new fetch
+    filterByDateRange(range.startDate, range.endDate);
+  };
+
+  // Handle refresh button click
+  const handleRefresh = async () => {
+    if (!token || !teamSlug || teamSlug === 'teams') return;
+    
+    setRefreshing(true);
+    setErrorState(false);
+    
+    try {
+      // Re-fetch data for this team
+      await fetchTeamMetrics(teamSlug);
+      
+      // Re-apply current date filter
+      filterByDateRange(dateRange.startDate, dateRange.endDate);
+    } catch (err) {
+      console.error('Error refreshing team data:', err);
+      setErrorState(true);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   // Loading state
@@ -116,14 +109,14 @@ export default function TeamDashboardPage() {
   }
 
   // Error state
-  if (error) {
+  if (error || errorState) {
     return (
       <DashboardLayout>
         <div className="bg-red-50 p-4 rounded-md text-red-700">
           <h2 className="text-lg font-semibold">Error</h2>
-          <p>{error}</p>
+          <p>{error || `Failed to load metrics for team: ${teamSlug}`}</p>
           <button
-            onClick={fetchData}
+            onClick={handleRefresh}
             className="mt-4 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-md transition-colors"
           >
             Retry
@@ -149,64 +142,65 @@ export default function TeamDashboardPage() {
     <DashboardLayout>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">{teamSlug}</h1>
-        <DateRangePicker onChange={handleDateRangeChange} />
+        <div className="flex items-center gap-3">
+          <DateRangePicker onChange={handleDateRangeChange} />
+          <button
+            onClick={handleRefresh}
+            className={`flex items-center px-3 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-md text-sm hover:bg-blue-100 ${
+              refreshing ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+            disabled={refreshing}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              className={`w-4 h-4 mr-1 ${refreshing ? 'animate-spin' : ''}`}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+      
+      {/* API Limitation Notice */}
+      <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6 text-sm">
+        <p className="text-blue-800">
+          <span className="font-medium">Note:</span> GitHub Copilot Metrics API has a limitation of {env.maxHistoricalDays} days of historical data. 
+          Data is loaded once and filtered client-side based on your selected date range.
+        </p>
       </div>
       
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <MetricCard
           title="Team Acceptance Rate"
-          value={currentTeamMetrics.totalAcceptancePercentage}
+          value={currentTeamMetrics.totalAcceptancePercentage || 0}
           change={currentTeamMetrics.totalAcceptancePercentage - currentTeamMetrics.avgAcceptancePercentage}
           format="percentage"
         />
         <MetricCard
           title="Team Completions"
-          value={currentTeamMetrics.totalCompletionsCount}
+          value={currentTeamMetrics.totalCompletionsCount || 0}
           format="number"
         />
         <MetricCard
           title="Team Active Users"
-          value={currentTeamMetrics.totalActiveUsers}
+          value={currentTeamMetrics.totalActiveUsers || 0}
           format="users"
         />
         <MetricCard
           title="Avg Per User"
-          value={currentTeamMetrics.avgCompletionsPerUser}
+          value={currentTeamMetrics.avgCompletionsPerUser || 0}
           format="number"
         />
-      </div>
-      
-      {/* Trend Chart */}
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-3">Team Weekly Activity</h2>
-        {trendLoading ? (
-          <div className="h-64 flex items-center justify-center bg-white rounded-lg shadow-sm border border-gray-100">
-            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-          </div>
-        ) : trendErrorState ? (
-          <div className="h-64 flex flex-col items-center justify-center bg-white rounded-lg shadow-sm border border-gray-100">
-            <p className="text-red-500 mb-4">Failed to load trend data</p>
-            <button
-              onClick={fetchTrendData}
-              className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-md transition-colors"
-            >
-              Retry
-            </button>
-          </div>
-        ) : completionsTrend ? (
-          <LineChart
-            data={completionsTrend.points}
-            height={300}
-            xAxisLabel="Date"
-            yAxisLabel="Completions"
-            formatY={(value) => value.toLocaleString()}
-          />
-        ) : (
-          <div className="h-64 flex items-center justify-center bg-white rounded-lg shadow-sm border border-gray-100">
-            <p className="text-gray-500">No trend data available</p>
-          </div>
-        )}
       </div>
       
       {/* Repository & Language Breakdowns */}
@@ -230,7 +224,8 @@ export default function TeamDashboardPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {currentTeamMetrics.repositoryMetrics
+                {currentTeamMetrics.repositoryMetrics && 
+                 currentTeamMetrics.repositoryMetrics
                   .sort((a, b) => b.completionsCount - a.completionsCount)
                   .slice(0, 5)
                   .map((repo) => (
@@ -255,32 +250,33 @@ export default function TeamDashboardPage() {
         <div>
           <h2 className="text-lg font-semibold text-gray-800 mb-3">Language Breakdown</h2>
           <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
-            {Object.entries(currentTeamMetrics.fileExtensionMetrics)
-              .sort(([, a], [, b]) => b.completionsCount - a.completionsCount)
-              .slice(0, 5)
-              .map(([extension, metrics]) => {
-                const percentage = 
-                  (metrics.completionsCount / currentTeamMetrics.totalCompletionsCount) * 100;
-                
-                return (
-                  <div key={extension} className="mb-4">
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm font-medium text-gray-700">
-                        {extension}
-                      </span>
-                      <span className="text-sm text-gray-500">
-                        {percentage.toFixed(1)}% ({metrics.completionsCount.toLocaleString()})
-                      </span>
+            {currentTeamMetrics.fileExtensionMetrics && 
+              Object.entries(currentTeamMetrics.fileExtensionMetrics)
+                .sort(([, a], [, b]) => b.completionsCount - a.completionsCount)
+                .slice(0, 5)
+                .map(([extension, metrics]) => {
+                  const percentage = currentTeamMetrics.totalCompletionsCount ? 
+                    (metrics.completionsCount / currentTeamMetrics.totalCompletionsCount) * 100 : 0;
+                  
+                  return (
+                    <div key={extension} className="mb-4">
+                      <div className="flex justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-700">
+                          {extension}
+                        </span>
+                        <span className="text-sm text-gray-500">
+                          {percentage.toFixed(1)}% ({metrics.completionsCount.toLocaleString()})
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2.5">
+                        <div
+                          className="bg-blue-600 h-2.5 rounded-full"
+                          style={{ width: `${percentage}%` }}
+                        ></div>
+                      </div>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div
-                        className="bg-blue-600 h-2.5 rounded-full"
-                        style={{ width: `${percentage}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
           </div>
         </div>
       </div>

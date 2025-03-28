@@ -249,15 +249,21 @@ export class CopilotApiClient {
     if (totalDays > env.maxHistoricalDays) {
       console.warn(`Requested ${totalDays} days of historical data, but GitHub API only allows ${env.maxHistoricalDays} days.`);
       
-      // Adjust period parameters to fit within the 28 day limit
-      if (periodDays > env.maxHistoricalDays) {
-        adjustedPeriodDays = env.maxHistoricalDays;
-        adjustedPeriods = 1;
+      // Try to maintain the requested number of periods if possible
+      if (Math.ceil(env.maxHistoricalDays / periods) > 0) {
+        // Can fit all periods with smaller period days
+        adjustedPeriodDays = Math.floor(env.maxHistoricalDays / periods);
+        console.log(`Adjusted period size to ${adjustedPeriodDays} days while keeping ${periods} periods.`);
       } else {
+        // Reduce the number of periods
         adjustedPeriods = Math.floor(env.maxHistoricalDays / periodDays);
+        if (adjustedPeriods === 0) {
+          // If we can't even fit one period, use the max allowed days as one period
+          adjustedPeriods = 1;
+          adjustedPeriodDays = env.maxHistoricalDays;
+        }
+        console.log(`Adjusted to ${adjustedPeriods} periods of ${adjustedPeriodDays} days each.`);
       }
-      
-      console.log(`Adjusted to ${adjustedPeriods} periods of ${adjustedPeriodDays} days each.`);
     }
     
     const endDate = new Date();

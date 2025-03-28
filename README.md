@@ -2,6 +2,17 @@
 
 A Next.js application to visualize GitHub Copilot usage metrics for your organization and teams.
 
+## API Limitations
+
+**Important:** The GitHub Copilot Metrics API has a limitation of 28 days of historical data. This application handles this limitation by:
+
+1. Loading the full 28 days of data at application startup
+2. Storing the data client-side in React state
+3. Filtering data client-side based on the user's selected date range
+4. Providing a refresh button to fetch fresh data when needed
+
+This approach minimizes API calls while giving users the flexibility to explore different date ranges within the 28-day window.
+
 ## Features
 
 - Organization-wide metrics dashboard

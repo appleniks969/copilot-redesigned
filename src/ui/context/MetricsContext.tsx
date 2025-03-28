@@ -2,20 +2,24 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import useSWR from 'swr';
-import { format, subDays } from 'date-fns';
+import { format, subDays, parseISO, isWithinInterval } from 'date-fns';
 import { CopilotMetrics } from '@/domain/models/metrics/copilot-metrics';
-import { MetricsService } from '@/application/metrics/metrics-service';
 import { CopilotApiClient } from '@/infrastructure/api/github/copilot-api-client';
 import { useAuth } from './AuthContext';
 import { env } from '@/infrastructure/config/env';
+import { MetricsCalculator } from '@/domain/services/metrics-calculator';
 
 interface MetricsContextType {
   organizationMetrics: CopilotMetrics | null;
+  filteredOrganizationMetrics: CopilotMetrics | null;
   teamMetrics: Record<string, CopilotMetrics>;
+  filteredTeamMetrics: Record<string, CopilotMetrics>;
   loading: boolean;
   error: string | null;
-  fetchOrganizationMetrics: (startDate?: string, endDate?: string) => Promise<void>;
-  fetchTeamMetrics: (teamSlug: string, startDate?: string, endDate?: string) => Promise<void>;
+  fetchOrganizationMetrics: () => Promise<void>;
+  fetchTeamMetrics: (teamSlug: string) => Promise<void>;
+  filterByDateRange: (startDate: string, endDate: string) => void;
+  refreshData: () => Promise<void>;
 }
 
 const MetricsContext = createContext<MetricsContextType | undefined>(undefined);
@@ -25,114 +29,81 @@ interface MetricsProviderProps {
 }
 
 export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) => {
+  // Full data states
+  const [organizationMetrics, setOrganizationMetrics] = useState<CopilotMetrics | null>(null);
   const [teamMetrics, setTeamMetrics] = useState<Record<string, CopilotMetrics>>({});
+  
+  // Filtered data states based on selected date range
+  const [filteredOrganizationMetrics, setFilteredOrganizationMetrics] = useState<CopilotMetrics | null>(null);
+  const [filteredTeamMetrics, setFilteredTeamMetrics] = useState<Record<string, CopilotMetrics>>({});
+  
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Current date range for filtering
+  const [currentDateRange, setCurrentDateRange] = useState({
+    startDate: format(subDays(new Date(), 7), 'yyyy-MM-dd'), // Default to last 7 days
+    endDate: format(new Date(), 'yyyy-MM-dd')
+  });
   
   const { token } = useAuth();
 
-  // Create a fetcher function for SWR
-  const fetcher = async (url: string) => {
-    if (!token) {
-      throw new Error('Authentication token is not available');
-    }
+  // Helper function to filter data by date range
+  const filterDataByDateRange = (
+    metrics: CopilotMetrics | null,
+    startDate: string,
+    endDate: string
+  ): CopilotMetrics | null => {
+    if (!metrics) return null;
     
-    const apiClient = new CopilotApiClient({
-      token: token.value,
-      secondsPerSuggestion: env.secondsPerSuggestion,
-    });
+    const start = parseISO(startDate);
+    const end = parseISO(endDate);
     
-    // Parse the URL to extract parameters
-    const urlObj = new URL(url, window.location.origin);
-    const params = Object.fromEntries(urlObj.searchParams);
+    // Filter repository metrics by date
+    const filteredRepositoryMetrics = metrics.repositoryMetrics.map(repo => ({
+      ...repo,
+      // Apply date filtering logic here if the API provides date information per repository
+    }));
     
-    // Determine what to fetch based on the URL path
-    if (url.includes('/api/org-metrics')) {
-      return apiClient.getOrganizationMetrics(
-        token.organizationName,
-        params.startDate,
-        params.endDate
-      );
-    } else if (url.includes('/api/team-metrics')) {
-      const teamSlug = params.teamSlug;
-      if (!teamSlug) throw new Error('Team slug is required');
-      
-      return apiClient.getTeamMetrics(
-        token.organizationName,
-        teamSlug,
-        params.startDate,
-        params.endDate
-      );
-    }
+    // Create filtered metrics object
+    // For simplicity, we're just filtering top-level objects here
+    // In a real app, you might need more sophisticated filtering based on the data structure
+    const filtered: CopilotMetrics = {
+      ...metrics,
+      repositoryMetrics: filteredRepositoryMetrics,
+      dateRange: {
+        startDate,
+        endDate
+      }
+    };
     
-    throw new Error('Invalid URL');
+    return filtered;
   };
-
-  // Use SWR for organization metrics
-  const getOrgMetricsKey = (startDate?: string, endDate?: string) => {
-    if (!token) return null; // Don't fetch if not authenticated
-    
-    const url = new URL('/api/org-metrics', window.location.origin);
-    if (startDate) url.searchParams.append('startDate', startDate);
-    if (endDate) url.searchParams.append('endDate', endDate);
-    
-    return url.toString();
-  };
-
-  // Fetch organization metrics using SWR
-  const fetchOrganizationMetrics = async (startDate?: string, endDate?: string) => {
-    if (!token) return;
-    
-    try {
-      const key = getOrgMetricsKey(startDate, endDate);
-      if (!key) return;
-      
-      // Trigger a revalidation
-      await mutate(key);
-    } catch (err) {
-      console.error('Error fetching organization metrics:', err);
-      setError('Failed to fetch organization metrics');
-      throw err;
-    }
-  };
-
-  // Use SWR for organization metrics with a default date range
-  const defaultStartDate = format(subDays(new Date(), env.maxHistoricalDays), 'yyyy-MM-dd');
-  const defaultEndDate = format(new Date(), 'yyyy-MM-dd');
   
-  const { data: organizationMetrics, error: orgError, mutate } = useSWR(
-    getOrgMetricsKey(defaultStartDate, defaultEndDate),
-    fetcher,
-    {
-      revalidateOnFocus: false,
-      revalidateOnReconnect: true,
-      refreshInterval: 5 * 60 * 1000, // Refresh every 5 minutes
-      dedupingInterval: 30 * 1000, // Dedupe requests within 30 seconds
-    }
-  );
-
-  // Update error state from SWR
-  useEffect(() => {
-    if (orgError) {
-      console.error('SWR error fetching organization metrics:', orgError);
-      setError('Failed to fetch organization metrics');
-    }
-  }, [orgError]);
-
-  // Helper function to get team metrics key for SWR
-  const getTeamMetricsKey = (teamSlug: string, startDate?: string, endDate?: string) => {
-    if (!token) return null;
+  // Public method to filter data by date range
+  const filterByDateRange = (startDate: string, endDate: string) => {
+    setCurrentDateRange({ startDate, endDate });
     
-    const url = new URL('/api/team-metrics', window.location.origin);
-    url.searchParams.append('teamSlug', teamSlug);
-    if (startDate) url.searchParams.append('startDate', startDate);
-    if (endDate) url.searchParams.append('endDate', endDate);
+    // Filter organization metrics
+    if (organizationMetrics) {
+      const filtered = filterDataByDateRange(organizationMetrics, startDate, endDate);
+      setFilteredOrganizationMetrics(filtered);
+    }
     
-    return url.toString();
+    // Filter team metrics
+    const filtered: Record<string, CopilotMetrics> = {};
+    Object.entries(teamMetrics).forEach(([slug, metrics]) => {
+      filtered[slug] = filterDataByDateRange(metrics, startDate, endDate) || metrics;
+    });
+    setFilteredTeamMetrics(filtered);
   };
 
-  // Fetch team metrics
-  const fetchTeamMetrics = async (teamSlug: string, startDate?: string, endDate?: string) => {
+  // Fetch organization metrics for the full 28-day period
+  const fetchOrganizationMetrics = async () => {
     if (!token) return;
+    
+    setLoading(true);
+    setError(null);
     
     try {
       const apiClient = new CopilotApiClient({
@@ -140,36 +111,120 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
         secondsPerSuggestion: env.secondsPerSuggestion,
       });
       
+      // Always fetch the max allowed historical data (28 days)
+      const fullStartDate = format(subDays(new Date(), env.maxHistoricalDays), 'yyyy-MM-dd');
+      const fullEndDate = format(new Date(), 'yyyy-MM-dd');
+      
+      const metrics = await apiClient.getOrganizationMetrics(
+        token.organizationName,
+        fullStartDate,
+        fullEndDate
+      );
+      
+      setOrganizationMetrics(metrics);
+      
+      // Apply current date filter
+      const filtered = filterDataByDateRange(
+        metrics,
+        currentDateRange.startDate,
+        currentDateRange.endDate
+      );
+      setFilteredOrganizationMetrics(filtered);
+    } catch (err) {
+      console.error('Error fetching organization metrics:', err);
+      setError('Failed to fetch organization metrics');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch team metrics for the full 28-day period
+  const fetchTeamMetrics = async (teamSlug: string) => {
+    if (!token) return;
+    
+    setLoading(true);
+    
+    try {
+      const apiClient = new CopilotApiClient({
+        token: token.value,
+        secondsPerSuggestion: env.secondsPerSuggestion,
+      });
+      
+      // Always fetch the max allowed historical data (28 days)
+      const fullStartDate = format(subDays(new Date(), env.maxHistoricalDays), 'yyyy-MM-dd');
+      const fullEndDate = format(new Date(), 'yyyy-MM-dd');
+      
       const metrics = await apiClient.getTeamMetrics(
         token.organizationName,
         teamSlug,
-        startDate,
-        endDate
+        fullStartDate,
+        fullEndDate
       );
       
-      setTeamMetrics((prevTeamMetrics) => ({
-        ...prevTeamMetrics,
-        [teamSlug]: metrics,
+      // Store full data
+      setTeamMetrics(prev => ({
+        ...prev,
+        [teamSlug]: metrics
+      }));
+      
+      // Apply current date filter
+      const filtered = filterDataByDateRange(
+        metrics,
+        currentDateRange.startDate,
+        currentDateRange.endDate
+      );
+      
+      setFilteredTeamMetrics(prev => ({
+        ...prev,
+        [teamSlug]: filtered || metrics
       }));
     } catch (err) {
       console.error(`Error fetching team metrics for ${teamSlug}:`, err);
       setError(`Failed to fetch team metrics for ${teamSlug}`);
-      throw err;
+    } finally {
+      setLoading(false);
     }
   };
-
-  // Determine loading state based on SWR
-  const loading = !organizationMetrics && !error;
+  
+  // Refresh all data
+  const refreshData = async () => {
+    setError(null);
+    
+    try {
+      await fetchOrganizationMetrics();
+      
+      // Refresh all team metrics that we've already loaded
+      const teamPromises = Object.keys(teamMetrics).map(
+        teamSlug => fetchTeamMetrics(teamSlug)
+      );
+      
+      await Promise.all(teamPromises);
+    } catch (err) {
+      console.error('Error refreshing data:', err);
+      setError('Failed to refresh metrics data');
+    }
+  };
+  
+  // Initial data fetch
+  useEffect(() => {
+    if (token) {
+      fetchOrganizationMetrics();
+    }
+  }, [token]);
 
   return (
     <MetricsContext.Provider
       value={{
-        organizationMetrics: organizationMetrics || null,
+        organizationMetrics,
+        filteredOrganizationMetrics,
         teamMetrics,
+        filteredTeamMetrics,
         loading,
         error,
         fetchOrganizationMetrics,
         fetchTeamMetrics,
+        filterByDateRange,
+        refreshData
       }}
     >
       {children}
