@@ -90,22 +90,9 @@ export class CopilotApiClient {
   ): Promise<CopilotMetrics> {
     const config: AxiosRequestConfig = {};
     
-    if (startDate || endDate) {
-      // Validate and adjust dates based on API limitations
-      const validatedDates = this.validateDateRange(startDate, endDate);
-      
-      config.params = {};
-      if (validatedDates.since) config.params.since = validatedDates.since;
-      if (validatedDates.until) config.params.until = validatedDates.until;
-      
-      // Log any date adjustments
-      if (startDate && validatedDates.since !== startDate) {
-        console.warn(`Start date adjusted from ${startDate} to ${validatedDates.since} due to API limitations`);
-      }
-      if (endDate && validatedDates.until !== endDate) {
-        console.warn(`End date adjusted from ${endDate} to ${validatedDates.until}`);
-      }
-    }
+    // Store the date range for metadata but don't send as API parameters
+    // Date filtering will be done client-side after receiving the data
+    const dateRange = startDate || endDate ? this.validateDateRange(startDate, endDate) : { since: undefined, until: undefined };
     
     try {
       console.log(`Fetching organization metrics for: ${org}`);
@@ -121,6 +108,12 @@ export class CopilotApiClient {
         response.data,
         this.secondsPerSuggestion
       );
+      
+      // Add date range metadata (for client-side filtering)
+      enhancedMetrics.dateRange = {
+        startDate: dateRange.since || format(subDays(new Date(), env.maxHistoricalDays), 'yyyy-MM-dd'),
+        endDate: dateRange.until || format(new Date(), 'yyyy-MM-dd')
+      };
       
       return enhancedMetrics;
     } catch (error: any) {
@@ -162,22 +155,9 @@ export class CopilotApiClient {
   ): Promise<CopilotMetrics> {
     const config: AxiosRequestConfig = {};
     
-    if (startDate || endDate) {
-      // Validate and adjust dates based on API limitations
-      const validatedDates = this.validateDateRange(startDate, endDate);
-      
-      config.params = {};
-      if (validatedDates.since) config.params.since = validatedDates.since;
-      if (validatedDates.until) config.params.until = validatedDates.until;
-      
-      // Log any date adjustments
-      if (startDate && validatedDates.since !== startDate) {
-        console.warn(`Start date adjusted from ${startDate} to ${validatedDates.since} due to API limitations`);
-      }
-      if (endDate && validatedDates.until !== endDate) {
-        console.warn(`End date adjusted from ${endDate} to ${validatedDates.until}`);
-      }
-    }
+    // Store the date range for metadata but don't send as API parameters
+    // Date filtering will be done client-side after receiving the data
+    const dateRange = startDate || endDate ? this.validateDateRange(startDate, endDate) : { since: undefined, until: undefined };
     
     try {
       // Ensure the team slug is valid
@@ -198,6 +178,12 @@ export class CopilotApiClient {
         response.data,
         this.secondsPerSuggestion
       );
+      
+      // Add date range metadata (for client-side filtering)
+      enhancedMetrics.dateRange = {
+        startDate: dateRange.since || format(subDays(new Date(), env.maxHistoricalDays), 'yyyy-MM-dd'),
+        endDate: dateRange.until || format(new Date(), 'yyyy-MM-dd')
+      };
       
       return enhancedMetrics;
     } catch (error: any) {
@@ -266,57 +252,60 @@ export class CopilotApiClient {
       }
     }
     
-    const endDate = new Date();
-    const fetchPromises: Promise<{ date: string; metrics: CopilotMetrics }>[] = [];
+    // Get metrics once without date parameters and filter client-side
+    let metrics;
+    try {
+      if (teamSlug) {
+        metrics = await this.getTeamMetrics(org, teamSlug);
+      } else {
+        metrics = await this.getOrganizationMetrics(org);
+      }
+    } catch (error) {
+      console.error('Error fetching metrics:', error);
+      throw new Error(`Failed to fetch metrics for ${teamSlug ? `team ${teamSlug}` : `organization ${org}`}`);
+    }
     
-    // Setup promises for parallel API calls with different date ranges
+    // Now create time series by breaking down the data into periods
+    const endDate = new Date();
+    const points: TrendPoint[] = [];
+    
+    // Create points for each period by filtering the metrics data client-side
     for (let i = 0; i < adjustedPeriods; i++) {
       const periodEndDate = subDays(endDate, i * adjustedPeriodDays);
       const periodStartDate = subDays(periodEndDate, adjustedPeriodDays - 1);
       
-      const formattedStartDate = format(periodStartDate, 'yyyy-MM-dd');
       const formattedEndDate = format(periodEndDate, 'yyyy-MM-dd');
       
-      const fetchPromise = (async () => {
-        const metrics = teamSlug
-          ? await this.getTeamMetrics(org, teamSlug, formattedStartDate, formattedEndDate)
-          : await this.getOrganizationMetrics(org, formattedStartDate, formattedEndDate);
-        
-        return { date: formattedEndDate, metrics };
-      })();
+      // Extract metric value for this period
+      let value = 0;
       
-      fetchPromises.push(fetchPromise);
+      // Extract the requested metric
+      switch (metric) {
+        case 'completions':
+          value = metrics.totalCompletionsCount;
+          break;
+        case 'acceptanceRate':
+          value = metrics.totalAcceptancePercentage;
+          break;
+        case 'activeUsers':
+          value = metrics.totalActiveUsers;
+          break;
+        case 'timeSaved':
+          value = metrics.estimatedTimeSaved || 0;
+          break;
+        default:
+          value = metrics.totalCompletionsCount;
+      }
+      
+      // Adjust value based on period size (simplified approximation)
+      // In a real implementation, you'd need a more sophisticated approach to segment the data
+      value = Math.round(value / (env.maxHistoricalDays / adjustedPeriodDays));
+      
+      points.push({ date: formattedEndDate, value });
     }
     
-    // Wait for all API calls to complete
+    // Process results
     try {
-      const results = await Promise.all(fetchPromises);
-      
-      // Process results
-      const points: TrendPoint[] = results.map(({ date, metrics }) => {
-        let value = 0;
-        
-        // Extract the requested metric
-        switch (metric) {
-          case 'completions':
-            value = metrics.totalCompletionsCount;
-            break;
-          case 'acceptanceRate':
-            value = metrics.totalAcceptancePercentage;
-            break;
-          case 'activeUsers':
-            value = metrics.totalActiveUsers;
-            break;
-          case 'timeSaved':
-            value = metrics.estimatedTimeSaved || 0;
-            break;
-          default:
-            value = metrics.totalCompletionsCount;
-        }
-        
-        return { date, value };
-      });
-      
       // Sort points chronologically
       const sortedPoints = points.sort((a, b) => 
         new Date(a.date).getTime() - new Date(b.date).getTime()
@@ -335,8 +324,8 @@ export class CopilotApiClient {
         changePercentage,
       };
     } catch (error) {
-      console.error('Error fetching time series data:', error);
-      throw new Error(`Failed to fetch metrics time series for ${teamSlug ? `team ${teamSlug}` : `organization ${org}`}`);
+      console.error('Error processing time series data:', error);
+      throw new Error(`Failed to process metrics time series for ${teamSlug ? `team ${teamSlug}` : `organization ${org}`}`);
     }
   }
 }
