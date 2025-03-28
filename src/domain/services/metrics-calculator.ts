@@ -44,6 +44,12 @@ export class MetricsCalculator {
     // Try snake_case first, then camelCase, then fallback to 0
     const value = obj[snakeCaseKey] !== undefined ? obj[snakeCaseKey] : 
                  (obj[camelCaseKey] !== undefined ? obj[camelCaseKey] : 0);
+    
+    // Handle string values that contain numbers
+    if (typeof value === 'string') {
+      const parsedValue = parseFloat(value);
+      return isNaN(parsedValue) ? 0 : parsedValue;
+    }
                  
     // Ensure we have a valid number
     return typeof value === 'number' ? value : 0;
@@ -59,6 +65,8 @@ export class MetricsCalculator {
     metricsData: any,
     secondsPerSuggestion: number = 55
   ): CopilotMetrics {
+    // Log the structure of the metrics data to help debug the mapping
+    console.log('Metrics data structure:', Object.keys(metricsData));
     console.log('Input metrics to enhance:', metricsData);
     
     // Start with empty metrics object that matches our domain model
@@ -82,19 +90,33 @@ export class MetricsCalculator {
     // Map values from API response format to our domain model
     // Handle both direct property access and potential nested structures
     if (metricsData) {
+      // Check if data is nested under a property (common in some API responses)
+      const metricsObj = metricsData.metrics || metricsData.data || metricsData;
+      
+      console.log('Metrics object to use for mapping:', metricsObj);
+      
       // Direct property mapping with fallbacks to zero
-      enhancedMetrics.totalCompletionsCount = this.getNumberValue(metricsData, 'total_completions_count', 'totalCompletionsCount');
-      enhancedMetrics.totalSuggestionCount = this.getNumberValue(metricsData, 'total_suggestion_count', 'totalSuggestionCount');
-      enhancedMetrics.totalAcceptanceCount = this.getNumberValue(metricsData, 'total_acceptance_count', 'totalAcceptanceCount');
-      enhancedMetrics.totalAcceptancePercentage = this.getNumberValue(metricsData, 'total_acceptance_percentage', 'totalAcceptancePercentage');
-      enhancedMetrics.totalActiveUsers = this.getNumberValue(metricsData, 'total_active_users', 'totalActiveUsers');
-      enhancedMetrics.avgCompletionsPerUser = this.getNumberValue(metricsData, 'avg_completions_per_user', 'avgCompletionsPerUser');
-      enhancedMetrics.avgSuggestionsPerUser = this.getNumberValue(metricsData, 'avg_suggestions_per_user', 'avgSuggestionsPerUser');
-      enhancedMetrics.avgAcceptancePercentage = this.getNumberValue(metricsData, 'avg_acceptance_percentage', 'avgAcceptancePercentage');
+      enhancedMetrics.totalCompletionsCount = this.getNumberValue(metricsObj, 'total_completions_count', 'totalCompletionsCount');
+      enhancedMetrics.totalSuggestionCount = this.getNumberValue(metricsObj, 'total_suggestion_count', 'totalSuggestionCount');
+      enhancedMetrics.totalAcceptanceCount = this.getNumberValue(metricsObj, 'total_acceptance_count', 'totalAcceptanceCount');
+      enhancedMetrics.totalAcceptancePercentage = this.getNumberValue(metricsObj, 'total_acceptance_percentage', 'totalAcceptancePercentage');
+      enhancedMetrics.totalActiveUsers = this.getNumberValue(metricsObj, 'total_active_users', 'totalActiveUsers');
+      enhancedMetrics.avgCompletionsPerUser = this.getNumberValue(metricsObj, 'avg_completions_per_user', 'avgCompletionsPerUser');
+      enhancedMetrics.avgSuggestionsPerUser = this.getNumberValue(metricsObj, 'avg_suggestions_per_user', 'avgSuggestionsPerUser');
+      enhancedMetrics.avgAcceptancePercentage = this.getNumberValue(metricsObj, 'avg_acceptance_percentage', 'avgAcceptancePercentage');
+      
+      // Add some additional debugging
+      console.log('Metric mappings results:', {
+        totalCompletionsCount: enhancedMetrics.totalCompletionsCount,
+        totalSuggestionCount: enhancedMetrics.totalSuggestionCount,
+        totalAcceptanceCount: enhancedMetrics.totalAcceptanceCount,
+        // Add other properties as needed
+      });
       
       // Handle repositories array - could be named differently in API
-      if (Array.isArray(metricsData.repository_metrics)) {
-        enhancedMetrics.repositoryMetrics = metricsData.repository_metrics.map((repo: any) => ({
+      
+      if (Array.isArray(metricsObj.repository_metrics)) {
+        enhancedMetrics.repositoryMetrics = metricsObj.repository_metrics.map((repo: any) => ({
           repositoryId: repo.repository_id || repo.repositoryId || '',
           repositoryName: repo.repository_name || repo.repositoryName || '',
           completionsCount: repo.completions_count || repo.completionsCount || 0,
@@ -102,12 +124,12 @@ export class MetricsCalculator {
           acceptanceCount: repo.acceptance_count || repo.acceptanceCount || 0,
           acceptancePercentage: repo.acceptance_percentage || repo.acceptancePercentage || 0
         }));
-      } else if (Array.isArray(metricsData.repositoryMetrics)) {
-        enhancedMetrics.repositoryMetrics = metricsData.repositoryMetrics;
+      } else if (Array.isArray(metricsObj.repositoryMetrics)) {
+        enhancedMetrics.repositoryMetrics = metricsObj.repositoryMetrics;
       }
       
       // Handle file extensions object - could be in different formats
-      const fileExtMetrics = metricsData.file_extension_metrics || metricsData.fileExtensionMetrics || {};
+      const fileExtMetrics = metricsObj.file_extension_metrics || metricsObj.fileExtensionMetrics || {};
       enhancedMetrics.fileExtensionMetrics = {};
       
       Object.keys(fileExtMetrics).forEach(ext => {
@@ -121,12 +143,12 @@ export class MetricsCalculator {
       });
       
       // Handle date range if it exists
-      if (metricsData.dateRange) {
-        enhancedMetrics.dateRange = metricsData.dateRange;
-      } else if (metricsData.date_range) {
+      if (metricsObj.dateRange) {
+        enhancedMetrics.dateRange = metricsObj.dateRange;
+      } else if (metricsObj.date_range) {
         enhancedMetrics.dateRange = {
-          startDate: metricsData.date_range.start_date || '',
-          endDate: metricsData.date_range.end_date || ''
+          startDate: metricsObj.date_range.start_date || '',
+          endDate: metricsObj.date_range.end_date || ''
         };
       }
     }

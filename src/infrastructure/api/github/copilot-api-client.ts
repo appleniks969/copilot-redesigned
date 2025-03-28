@@ -103,7 +103,7 @@ export class CopilotApiClient {
         config
       );
       
-      console.log('Raw API response:', response.data);
+      console.log('Raw API response:', JSON.stringify(response.data, null, 2));
       
       // If response.data is empty or doesn't have the expected structure,
       // create a default metrics object
@@ -132,6 +132,18 @@ export class CopilotApiClient {
       // Enhance with derived metrics
       // Make sure we're logging the raw data properly before enhancement
       console.log('Raw metrics data before enhancement:', JSON.stringify(metricsData, null, 2));
+      
+      // Check if response has nested structure
+      if (metricsData && typeof metricsData === 'object') {
+        console.log('Raw metrics properties:', Object.keys(metricsData));
+        
+        // Check if metrics are under a property
+        if (metricsData.metrics) {
+          console.log('Found metrics under "metrics" property');
+        } else if (metricsData.data) {
+          console.log('Found metrics under "data" property');
+        }
+      }
       
       const enhancedMetrics = MetricsCalculator.enhanceWithDerivedMetrics(
         metricsData,
@@ -202,7 +214,7 @@ export class CopilotApiClient {
       
       const response = await this.client.get(endpoint, config);
       
-      console.log(`Raw API response for team ${teamSlug}:`, response.data);
+      console.log(`Raw API response for team ${teamSlug}:`, JSON.stringify(response.data, null, 2));
       
       // If response.data is empty or doesn't have the expected structure,
       // create a default metrics object
@@ -231,6 +243,18 @@ export class CopilotApiClient {
       // Enhance with derived metrics
       // Make sure we're logging the raw data properly before enhancement
       console.log(`Raw metrics data for team ${teamSlug} before enhancement:`, JSON.stringify(metricsData, null, 2));
+      
+      // Check if response has nested structure
+      if (metricsData && typeof metricsData === 'object') {
+        console.log(`Raw metrics properties for team ${teamSlug}:`, Object.keys(metricsData));
+        
+        // Check if metrics are under a property
+        if (metricsData.metrics) {
+          console.log(`Found metrics for team ${teamSlug} under "metrics" property`);
+        } else if (metricsData.data) {
+          console.log(`Found metrics for team ${teamSlug} under "data" property`);
+        }
+      }
       
       const enhancedMetrics = MetricsCalculator.enhanceWithDerivedMetrics(
         metricsData,
