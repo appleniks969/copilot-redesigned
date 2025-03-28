@@ -56,27 +56,19 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
   ): CopilotMetrics | null => {
     if (!metrics) return null;
     
-    const start = parseISO(startDate);
-    const end = parseISO(endDate);
+    console.log('Filtering metrics by date range:', { startDate, endDate });
+    console.log('Original metrics:', metrics);
     
-    // Filter repository metrics by date
-    const filteredRepositoryMetrics = metrics.repositoryMetrics.map(repo => ({
-      ...repo,
-      // Apply date filtering logic here if the API provides date information per repository
-    }));
-    
-    // Create filtered metrics object
-    // For simplicity, we're just filtering top-level objects here
-    // In a real app, you might need more sophisticated filtering based on the data structure
+    // Create a copy of the metrics to avoid modifying the original
     const filtered: CopilotMetrics = {
       ...metrics,
-      repositoryMetrics: filteredRepositoryMetrics,
       dateRange: {
         startDate,
         endDate
       }
     };
     
+    console.log('Filtered metrics:', filtered);
     return filtered;
   };
   
@@ -120,6 +112,8 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
         fullStartDate,
         fullEndDate
       );
+      
+      console.log('API response metrics:', metrics);
       
       setOrganizationMetrics(metrics);
       

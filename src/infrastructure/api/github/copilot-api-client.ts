@@ -103,9 +103,35 @@ export class CopilotApiClient {
         config
       );
       
+      console.log('Raw API response:', response.data);
+      
+      // If response.data is empty or doesn't have the expected structure,
+      // create a default metrics object
+      let metricsData = response.data;
+      
+      if (!metricsData || typeof metricsData !== 'object') {
+        console.warn('API returned unexpected data format. Using default metrics.');
+        metricsData = {
+          totalCompletionsCount: 0,
+          totalSuggestionCount: 0,
+          totalAcceptanceCount: 0,
+          totalAcceptancePercentage: 0,
+          totalActiveUsers: 0,
+          avgCompletionsPerUser: 0,
+          avgSuggestionsPerUser: 0,
+          avgAcceptancePercentage: 0,
+          repositoryMetrics: [],
+          fileExtensionMetrics: {},
+          dateRange: {
+            startDate: dateRange.since || format(subDays(new Date(), env.maxHistoricalDays), 'yyyy-MM-dd'),
+            endDate: dateRange.until || format(new Date(), 'yyyy-MM-dd')
+          }
+        };
+      }
+      
       // Enhance with derived metrics
       const enhancedMetrics = MetricsCalculator.enhanceWithDerivedMetrics(
-        response.data,
+        metricsData,
         this.secondsPerSuggestion
       );
       
@@ -173,9 +199,35 @@ export class CopilotApiClient {
       
       const response = await this.client.get(endpoint, config);
       
+      console.log(`Raw API response for team ${teamSlug}:`, response.data);
+      
+      // If response.data is empty or doesn't have the expected structure,
+      // create a default metrics object
+      let metricsData = response.data;
+      
+      if (!metricsData || typeof metricsData !== 'object') {
+        console.warn(`API returned unexpected data format for team ${teamSlug}. Using default metrics.`);
+        metricsData = {
+          totalCompletionsCount: 0,
+          totalSuggestionCount: 0,
+          totalAcceptanceCount: 0,
+          totalAcceptancePercentage: 0,
+          totalActiveUsers: 0,
+          avgCompletionsPerUser: 0,
+          avgSuggestionsPerUser: 0,
+          avgAcceptancePercentage: 0,
+          repositoryMetrics: [],
+          fileExtensionMetrics: {},
+          dateRange: {
+            startDate: dateRange.since || format(subDays(new Date(), env.maxHistoricalDays), 'yyyy-MM-dd'),
+            endDate: dateRange.until || format(new Date(), 'yyyy-MM-dd')
+          }
+        };
+      }
+      
       // Enhance with derived metrics
       const enhancedMetrics = MetricsCalculator.enhanceWithDerivedMetrics(
-        response.data,
+        metricsData,
         this.secondsPerSuggestion
       );
       

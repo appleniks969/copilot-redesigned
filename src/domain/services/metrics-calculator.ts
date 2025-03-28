@@ -27,9 +27,19 @@ export class MetricsCalculator {
     metrics: CopilotMetrics,
     secondsPerSuggestion: number = 55
   ): CopilotMetrics {
+    console.log('Input metrics to enhance:', metrics);
+    
     const enhancedMetrics = { ...metrics };
     
     // Ensure required properties exist with defaults
+    enhancedMetrics.totalCompletionsCount = metrics.totalCompletionsCount || 0;
+    enhancedMetrics.totalSuggestionCount = metrics.totalSuggestionCount || 0;
+    enhancedMetrics.totalAcceptanceCount = metrics.totalAcceptanceCount || 0;
+    enhancedMetrics.totalAcceptancePercentage = metrics.totalAcceptancePercentage || 0;
+    enhancedMetrics.totalActiveUsers = metrics.totalActiveUsers || 0;
+    enhancedMetrics.avgCompletionsPerUser = metrics.avgCompletionsPerUser || 0;
+    enhancedMetrics.avgSuggestionsPerUser = metrics.avgSuggestionsPerUser || 0;
+    enhancedMetrics.avgAcceptancePercentage = metrics.avgAcceptancePercentage || 0;
     enhancedMetrics.repositoryMetrics = metrics.repositoryMetrics || [];
     enhancedMetrics.fileExtensionMetrics = metrics.fileExtensionMetrics || {};
     
@@ -38,6 +48,8 @@ export class MetricsCalculator {
       metrics.totalAcceptanceCount,
       secondsPerSuggestion
     );
+    
+    console.log('Enhanced metrics:', enhancedMetrics);
     
     return enhancedMetrics;
   }
