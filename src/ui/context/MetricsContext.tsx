@@ -57,8 +57,9 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
     if (!metrics) return null;
     
     console.log('Filtering metrics by date range:', { startDate, endDate });
-    
-    // Check if we actually have data for the full 28-day range in metrics
+    console.log('Metrics data date range:', metrics.dateRange); // Log the raw metrics date range
+
+    // Check if we actually have data for the full range in metrics
     const hasFullData = metrics.dateRange && 
                         metrics.dateRange.startDate && 
                         metrics.dateRange.endDate;
@@ -68,18 +69,56 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
       return metrics; // Return the original data if we can't filter
     }
     
-    // Parse dates for calculations
-    const fullRangeStart = parseISO(metrics.dateRange.startDate);
-    const fullRangeEnd = parseISO(metrics.dateRange.endDate);
-    const filterStart = parseISO(startDate);
-    const filterEnd = parseISO(endDate);
+    // Parse dates for calculations - use the date-fns parseISO function to ensure consistent parsing
+    let fullRangeStart, fullRangeEnd, filterStart, filterEnd;
+    try {
+      // Make sure we're working with just the date portion to avoid timezone issues
+      fullRangeStart = parseISO(metrics.dateRange.startDate.split('T')[0]);
+      fullRangeEnd = parseISO(metrics.dateRange.endDate.split('T')[0]);
+      filterStart = parseISO(startDate.split('T')[0]);
+      filterEnd = parseISO(endDate.split('T')[0]);
+
+      console.log('Parsed Dates (after normalization):', { 
+        fullRangeStart, 
+        fullRangeEnd, 
+        filterStart, 
+        filterEnd 
+      });
+    } catch (parseError) {
+      console.error("Date parsing error:", parseError);
+      console.error("Problematic dates:", {
+        metricsStart: metrics.dateRange.startDate,
+        metricsEnd: metrics.dateRange.endDate,
+        filterStart: startDate,
+        filterEnd: endDate
+      });
+      return metrics; // Return original data if parsing fails
+    }
     
     // Calculate overlap of selected range with available data range
     const effectiveStartDate = new Date(Math.max(filterStart.getTime(), fullRangeStart.getTime()));
     const effectiveEndDate = new Date(Math.min(filterEnd.getTime(), fullRangeEnd.getTime()));
     
-    // If there's no overlap, return metrics object with zeros
-    if (effectiveEndDate < effectiveStartDate) {
+    console.log('Effective Dates:', { 
+      effectiveStartDate, 
+      effectiveEndDate,
+      effectiveStartTime: effectiveStartDate.getTime(),
+      effectiveEndTime: effectiveEndDate.getTime(),
+      difference: effectiveEndDate.getTime() - effectiveStartDate.getTime()
+    });
+
+    // Convert end date to end of day to include the entire day in the range
+    // This fixes the issue where same-day ranges might be considered non-overlapping
+    const adjustedEffectiveEndDate = new Date(effectiveEndDate);
+    adjustedEffectiveEndDate.setHours(23, 59, 59, 999);
+    
+    console.log('Overlap Check:', {
+      'Using original end date - effectiveEndDate < effectiveStartDate': effectiveEndDate < effectiveStartDate,
+      'Using adjusted end date - adjustedEffectiveEndDate < effectiveStartDate': adjustedEffectiveEndDate < effectiveStartDate
+    });
+    
+    // If there's no overlap (even with adjusted end date), return metrics object with zeros
+    if (adjustedEffectiveEndDate < effectiveStartDate) {
       console.warn('Selected date range has no overlap with available data');
       
       // Return a metrics object with zeros but maintain structure
@@ -102,31 +141,18 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
       };
     }
     
-    // Calculate days for ratio (used only if no daily breakdown available)
-    const fullRangeDays = Math.max(1, Math.round((fullRangeEnd.getTime() - fullRangeStart.getTime()) / (24 * 60 * 60 * 1000)));
-    const filteredDays = Math.max(1, Math.round((effectiveEndDate.getTime() - effectiveStartDate.getTime()) / (24 * 60 * 60 * 1000)));
+    // Calculate days for ratio using the adjusted effective end date
+    const fullRangeDays = Math.max(1, Math.round((fullRangeEnd.getTime() - fullRangeStart.getTime()) / (24 * 60 * 60 * 1000)) + 1);  // +1 to include both start and end days
+    const filteredDays = Math.max(1, Math.round((adjustedEffectiveEndDate.getTime() - effectiveStartDate.getTime()) / (24 * 60 * 60 * 1000)) + 1);  // +1 to include both start and end days
     const daysRatio = filteredDays / fullRangeDays;
     
     console.log(`Date range ratio: ${daysRatio} (${filteredDays}/${fullRangeDays} days)`);
     
-    // Check if we have daily breakdown data (this would be ideal but GitHub API might not provide it)
-    // If we had daily data, we'd filter like this:
-    /*
-    if (metrics.dailyBreakdown) {
-      // Real filtering using daily data
-      const filteredData = metrics.dailyBreakdown
-        .filter(day => {
-          const dayDate = parseISO(day.date);
-          return dayDate >= effectiveStartDate && dayDate <= effectiveEndDate;
-        })
-        .reduce((totals, day) => {
-          // Sum up all metrics from daily data
-          totals.totalCompletionsCount += day.completionsCount;
-          // etc.
-          return totals;
-        }, initialTotals);
+    // Make sure we're not returning zero metrics if there is actual data
+    if (daysRatio <= 0 || isNaN(daysRatio)) {
+      console.warn('Invalid days ratio calculated, using original metrics');
+      return metrics;
     }
-    */
     
     // Since we likely don't have daily data, use proportional scaling
     // This is an approximation but better than returning null or empty data
@@ -139,12 +165,12 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
         (Math.round(metrics.totalAcceptanceCount * daysRatio) / Math.round(metrics.totalSuggestionCount * daysRatio) * 100) : 
         metrics.totalAcceptancePercentage,
       // For users, we'll assume consistent usage across the period
-      totalActiveUsers: Math.round(metrics.totalActiveUsers * daysRatio),
+      totalActiveUsers: Math.max(1, Math.round(metrics.totalActiveUsers * daysRatio)),
       avgCompletionsPerUser: metrics.totalActiveUsers > 0 ? 
-        (Math.round(metrics.totalCompletionsCount * daysRatio) / Math.round(metrics.totalActiveUsers * daysRatio)) : 
+        (Math.round(metrics.totalCompletionsCount * daysRatio) / Math.max(1, Math.round(metrics.totalActiveUsers * daysRatio))) : 
         metrics.avgCompletionsPerUser,
       avgSuggestionsPerUser: metrics.totalActiveUsers > 0 ? 
-        (Math.round(metrics.totalSuggestionCount * daysRatio) / Math.round(metrics.totalActiveUsers * daysRatio)) : 
+        (Math.round(metrics.totalSuggestionCount * daysRatio) / Math.max(1, Math.round(metrics.totalActiveUsers * daysRatio))) : 
         metrics.avgSuggestionsPerUser,
       avgAcceptancePercentage: metrics.avgAcceptancePercentage,
       // Scale estimated time saved
