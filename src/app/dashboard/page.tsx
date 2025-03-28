@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/ui/components/layout/DashboardLayout';
 import { MetricCard } from '@/ui/components/metrics/cards/MetricCard';
 import { LineChart } from '@/ui/components/metrics/charts/LineChart';
@@ -12,7 +13,8 @@ import { Trend } from '@/domain/models/metrics/trend';
 import { format } from 'date-fns';
 
 export default function DashboardPage() {
-  const { token } = useAuth();
+  const router = useRouter();
+  const { token, isAuthenticated } = useAuth();
   const { organizationMetrics, loading, error, fetchOrganizationMetrics } = useMetrics();
   
   const [dateRange, setDateRange] = useState({
@@ -35,16 +37,30 @@ export default function DashboardPage() {
     } catch (err) {
       console.error('Error fetching organization metrics:', err);
       setErrorState(true);
+      
+      // Check if error is due to authentication
+      if (err instanceof Error && 
+          (err.message.includes('401') || err.message.includes('authentication'))) {
+        // Redirect to login page if unauthorized
+        router.push('/');
+      }
     }
   };
 
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push('/');
+    }
+  }, [isAuthenticated, router]);
+
   // Initial data fetch and when parameters change
   useEffect(() => {
-    // Only fetch if we're not in an error state
-    if (token && !errorState) {
+    // Only fetch if we're authenticated and not in an error state
+    if (token && isAuthenticated && !errorState) {
       fetchData();
     }
-  }, [token, dateRange]); // Removed fetchOrganizationMetrics from dependencies
+  }, [token, isAuthenticated, dateRange]); // Removed fetchOrganizationMetrics from dependencies
 
   // Fetch trend data
   const [trendErrorState, setTrendErrorState] = useState(false);

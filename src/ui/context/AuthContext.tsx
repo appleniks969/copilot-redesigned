@@ -24,6 +24,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const router = useRouter();
   const authService = new AuthService();
 
+  // Check for default environment values
+  useEffect(() => {
+    const defaultOrgName = 'your-org-name';
+    if (process.env.NEXT_PUBLIC_DEFAULT_ORG_NAME === defaultOrgName) {
+      console.warn(
+        'Environment variables not configured: Update .env.local with your organization details.'
+      );
+    }
+  }, []);
+
   // Initialize auth state from storage on component mount
   useEffect(() => {
     const storedToken = authService.getToken();

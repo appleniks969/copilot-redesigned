@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/ui/context/AuthContext';
 import { Token } from '@/domain/models/auth/token';
@@ -11,11 +11,14 @@ export default function Home() {
   const { login } = useAuth();
   
   const [orgName, setOrgName] = useState(env.defaultOrgName);
-  const [teamSlugs, setTeamSlugs] = useState<string[]>(env.defaultTeamSlugs);
+  const [teamSlugs, setTeamSlugs] = useState<string[]>(env.defaultTeamSlugs || []);
   const [teamInput, setTeamInput] = useState('');
   const [token, setToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Check if using default placeholder values
+  const isUsingDefaultValues = orgName === 'your-org-name';
 
   // Add team to the list
   const addTeam = () => {
@@ -75,6 +78,16 @@ export default function Home() {
           GitHub Copilot Metrics Dashboard
         </h1>
         
+        {isUsingDefaultValues && (
+          <div className="bg-yellow-50 text-yellow-800 p-4 mb-6 rounded-md border border-yellow-200">
+            <h2 className="font-semibold">Environment Setup Required</h2>
+            <p className="text-sm mt-1">
+              Please update your <code className="bg-yellow-100 px-1 rounded">.env.local</code> file 
+              with your GitHub organization name and team slugs before connecting.
+            </p>
+          </div>
+        )}
+        
         {error && (
           <div className="bg-red-50 text-red-700 p-3 rounded-md mb-4">
             {error}
@@ -117,7 +130,7 @@ export default function Home() {
               </button>
             </div>
             
-            {teamSlugs.length > 0 && (
+            {teamSlugs && teamSlugs.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {teamSlugs.map((teamSlug) => (
                   <div

@@ -11,6 +11,14 @@ A Next.js application to visualize GitHub Copilot usage metrics for your organiz
 - Language and repository breakdowns
 - Customizable date ranges
 
+## Recent Improvements
+
+- **Enhanced Security**: Improved authentication using HTTP-only cookies via Next.js API Routes
+- **Optimized Data Fetching**: Implemented SWR for efficient caching and revalidation
+- **API Optimization**: Parallel API requests for time series data
+- **UI/UX Improvements**: Added proper logout functionality and improved loading states
+- **Improved Configuration**: Environment variable management and documentation
+
 ## Getting Started
 
 ### Prerequisites
@@ -36,7 +44,15 @@ npm install
 yarn install
 ```
 
-3. Start the development server:
+3. Create a `.env.local` file using the template:
+
+```bash
+cp .env.local.example .env.local
+```
+
+4. Edit the `.env.local` file to configure your GitHub organization and preferences.
+
+5. Start the development server:
 
 ```bash
 npm run dev
@@ -44,7 +60,7 @@ npm run dev
 yarn dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+6. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Usage
 

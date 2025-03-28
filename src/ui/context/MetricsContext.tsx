@@ -1,10 +1,13 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import useSWR from 'swr';
+import { format } from 'date-fns';
 import { CopilotMetrics } from '@/domain/models/metrics/copilot-metrics';
 import { MetricsService } from '@/application/metrics/metrics-service';
 import { CopilotApiClient } from '@/infrastructure/api/github/copilot-api-client';
 import { useAuth } from './AuthContext';
+import { env } from '@/infrastructure/config/env';
 
 interface MetricsContextType {
   organizationMetrics: CopilotMetrics | null;
@@ -22,68 +25,122 @@ interface MetricsProviderProps {
 }
 
 export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) => {
-  const [organizationMetrics, setOrganizationMetrics] = useState<CopilotMetrics | null>(null);
   const [teamMetrics, setTeamMetrics] = useState<Record<string, CopilotMetrics>>({});
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   const { token } = useAuth();
 
-  // Create metrics service when token is available
-  const getMetricsService = () => {
+  // Create a fetcher function for SWR
+  const fetcher = async (url: string) => {
     if (!token) {
       throw new Error('Authentication token is not available');
     }
     
     const apiClient = new CopilotApiClient({
       token: token.value,
-      secondsPerSuggestion: 55,
+      secondsPerSuggestion: env.secondsPerSuggestion,
     });
     
-    return new MetricsService(apiClient, {
-      cacheEnabled: true,
-      cacheTtlMs: 30 * 60 * 1000, // 30 minutes
-    });
-  };
-
-  // Fetch organization metrics
-  const fetchOrganizationMetrics = async (startDate?: string, endDate?: string) => {
-    if (!token) {
-      return;
+    // Parse the URL to extract parameters
+    const urlObj = new URL(url, window.location.origin);
+    const params = Object.fromEntries(urlObj.searchParams);
+    
+    // Determine what to fetch based on the URL path
+    if (url.includes('/api/org-metrics')) {
+      return apiClient.getOrganizationMetrics(
+        token.organizationName,
+        params.startDate,
+        params.endDate
+      );
+    } else if (url.includes('/api/team-metrics')) {
+      const teamSlug = params.teamSlug;
+      if (!teamSlug) throw new Error('Team slug is required');
+      
+      return apiClient.getTeamMetrics(
+        token.organizationName,
+        teamSlug,
+        params.startDate,
+        params.endDate
+      );
     }
     
-    setLoading(true);
-    setError(null);
+    throw new Error('Invalid URL');
+  };
+
+  // Use SWR for organization metrics
+  const getOrgMetricsKey = (startDate?: string, endDate?: string) => {
+    if (!token) return null; // Don't fetch if not authenticated
+    
+    const url = new URL('/api/org-metrics', window.location.origin);
+    if (startDate) url.searchParams.append('startDate', startDate);
+    if (endDate) url.searchParams.append('endDate', endDate);
+    
+    return url.toString();
+  };
+
+  // Fetch organization metrics using SWR
+  const fetchOrganizationMetrics = async (startDate?: string, endDate?: string) => {
+    if (!token) return;
     
     try {
-      const metricsService = getMetricsService();
-      const metrics = await metricsService.getOrganizationMetrics(
-        token.organizationName,
-        startDate,
-        endDate
-      );
+      const key = getOrgMetricsKey(startDate, endDate);
+      if (!key) return;
       
-      setOrganizationMetrics(metrics);
+      // Trigger a revalidation
+      await mutate(key);
     } catch (err) {
       console.error('Error fetching organization metrics:', err);
       setError('Failed to fetch organization metrics');
-    } finally {
-      setLoading(false);
+      throw err;
     }
+  };
+
+  // Use SWR for organization metrics with a default date range
+  const defaultStartDate = format(new Date(Date.now() - env.defaultMetricsPeriodDays * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+  const defaultEndDate = format(new Date(), 'yyyy-MM-dd');
+  
+  const { data: organizationMetrics, error: orgError, mutate } = useSWR(
+    getOrgMetricsKey(defaultStartDate, defaultEndDate),
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshInterval: 5 * 60 * 1000, // Refresh every 5 minutes
+      dedupingInterval: 30 * 1000, // Dedupe requests within 30 seconds
+    }
+  );
+
+  // Update error state from SWR
+  useEffect(() => {
+    if (orgError) {
+      console.error('SWR error fetching organization metrics:', orgError);
+      setError('Failed to fetch organization metrics');
+    }
+  }, [orgError]);
+
+  // Helper function to get team metrics key for SWR
+  const getTeamMetricsKey = (teamSlug: string, startDate?: string, endDate?: string) => {
+    if (!token) return null;
+    
+    const url = new URL('/api/team-metrics', window.location.origin);
+    url.searchParams.append('teamSlug', teamSlug);
+    if (startDate) url.searchParams.append('startDate', startDate);
+    if (endDate) url.searchParams.append('endDate', endDate);
+    
+    return url.toString();
   };
 
   // Fetch team metrics
   const fetchTeamMetrics = async (teamSlug: string, startDate?: string, endDate?: string) => {
-    if (!token) {
-      return;
-    }
-    
-    setLoading(true);
-    setError(null);
+    if (!token) return;
     
     try {
-      const metricsService = getMetricsService();
-      const metrics = await metricsService.getTeamMetrics(
+      const apiClient = new CopilotApiClient({
+        token: token.value,
+        secondsPerSuggestion: env.secondsPerSuggestion,
+      });
+      
+      const metrics = await apiClient.getTeamMetrics(
         token.organizationName,
         teamSlug,
         startDate,
@@ -97,15 +154,17 @@ export const MetricsProvider: React.FC<MetricsProviderProps> = ({ children }) =>
     } catch (err) {
       console.error(`Error fetching team metrics for ${teamSlug}:`, err);
       setError(`Failed to fetch team metrics for ${teamSlug}`);
-    } finally {
-      setLoading(false);
+      throw err;
     }
   };
+
+  // Determine loading state based on SWR
+  const loading = !organizationMetrics && !error;
 
   return (
     <MetricsContext.Provider
       value={{
-        organizationMetrics,
+        organizationMetrics: organizationMetrics || null,
         teamMetrics,
         loading,
         error,

@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/ui/context/AuthContext';
 
 interface SidebarProps {
   // Define props if needed
@@ -10,6 +11,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = () => {
   const pathname = usePathname();
+  const { logout } = useAuth();
   
   // Navigation items
   const navItems = [
@@ -60,7 +62,11 @@ export const Sidebar: React.FC<SidebarProps> = () => {
       </nav>
       
       <div className="absolute bottom-0 w-56 p-4">
-        <button className="w-full flex items-center justify-center px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded">
+        <button 
+          onClick={logout}
+          className="w-full flex items-center justify-center px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded"
+          aria-label="Logout"
+        >
           <svg
             className="mr-3 h-5 w-5"
             xmlns="http://www.w3.org/2000/svg"
